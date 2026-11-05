@@ -1,5 +1,5 @@
 {
-  "name": "dmt-receipts-mcp-unpublished",
+  "name": "dmt-receipts-mcp",
   "version": "0.1.0",
   "description": "Local MCP server for creating and checking canonical OpenTimestamps receipts for agent memories.",
   "type": "module",
@@ -36,7 +36,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/PLACEHOLDER/dmt-receipts.git"
+    "url": "https://github.com/many77146-bot/dmt-receipts.git"
   },
   "engines": {
     "node": ">=18"
@@ -49,5 +49,12 @@
     "tsx": "^4.19.0",
     "typescript": "^5.7.0"
   },
-  "mcpName": "io.github.PLACEHOLDER/dmt-receipts"
+  "mcpName": "io.github.many77146-bot/dmt-receipts",
+  "homepage": "https://misty-flame-3nw3.here.now/",
+  "bugs": {
+    "url": "https://github.com/many77146-bot/dmt-receipts/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
 }
