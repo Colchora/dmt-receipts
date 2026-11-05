@@ -1,0 +1,49 @@
+{
+  "format": "dmt-memory-bundle/v1",
+  "exported_at": "2026-11-05T18:01:10Z",
+  "source": "Cultura stamp via OpenTimestamps calendars",
+  "protocol": "https://misty-flame-3nw3.here.now/llms.txt",
+  "memories": [
+    {
+      "memory": {
+        "agent_id": "cultura",
+        "key": "session/2026-11-05/dmt-receipts-plan",
+        "content": {
+          "summary": "DMT Receipts is a Bitcoin-anchored memory receipt protocol for AI agents via OpenTimestamps. Site claimed permanent at https://misty-flame-3nw3.here.now/. Local Hermes-polished MCP scaffold ready; GitHub public repo dmt-receipts blocked on Cursor GitHub connect. Customer plan saved; Show HN and Reddit drafts pending. Quality bar: correct, trustworthy, interaction-friendly.",
+          "site": "https://misty-flame-3nw3.here.now/",
+          "scaffold": "/workspace/dmt-receipts-github/",
+          "desktop_copy": "C:\\\\Users\\\\darli\\\\Desktop\\\\dmt-receipts",
+          "constraints": [
+            "no government name in accounts/files",
+            "no npm/registry publish yet",
+            "no spend without ask"
+          ]
+        },
+        "tags": [
+          "dmt-receipts",
+          "agent-memory",
+          "plan",
+          "cultura"
+        ],
+        "created_at": "2026-11-05T18:01:10Z"
+      },
+      "canonical": "{\"agent_id\":\"cultura\",\"content\":{\"constraints\":[\"no government name in accounts/files\",\"no npm/registry publish yet\",\"no spend without ask\"],\"desktop_copy\":\"C:\\\\\\\\Users\\\\\\\\darli\\\\\\\\Desktop\\\\\\\\dmt-receipts\",\"scaffold\":\"/workspace/dmt-receipts-github/\",\"site\":\"https://misty-flame-3nw3.here.now/\",\"summary\":\"DMT Receipts is a Bitcoin-anchored memory receipt protocol for AI agents via OpenTimestamps. Site claimed permanent at https://misty-flame-3nw3.here.now/. Local Hermes-polished MCP scaffold ready; GitHub public repo dmt-receipts blocked on Cursor GitHub connect. Customer plan saved; Show HN and Reddit drafts pending. Quality bar: correct, trustworthy, interaction-friendly.\"},\"created_at\":\"2026-11-05T18:01:10Z\",\"key\":\"session/2026-11-05/dmt-receipts-plan\",\"tags\":[\"dmt-receipts\",\"agent-memory\",\"plan\",\"cultura\"]}",
+      "sha256": "13b27232ae0f3d9bb27cd26531a1802d6a6815ec5ac55a81900467aa4bef9ab6",
+      "calendars": [
+        "https://a.pool.opentimestamps.org",
+        "https://b.pool.opentimestamps.org",
+        "https://a.pool.eternitywall.com"
+      ],
+      "calendar_errors": [],
+      "status": "pending",
+      "ots_base64": "AE9wZW5UaW1lc3RhbXBzAABQcm9vZgC/ieLohOiSlAEIE7JyMq4PPZuyfNJlMaGALWpoFexaxVqBkARnqkvvmrb/8AjgOfnq0OLwbwjxINheM8rx1ZniF5SGRkjpApV+aZD52ukwsHSSNSVw1CS/CPEg1hC6jmiQJBUrkeQva7VCGmidygkNHEyzL45qULoqsmsI8BBWQ1IE7YqcWQAId/EmdY1ICPAgDydB24MpHH5JqXcY2EY9aR6TXZ29eSUEW4sMASqJtQQI8CCfzr5xSQ7qR7eCm/MxWbaeTN3v3L0gMz00D6GDJxTDqAjwIJN8BXZckWoPDdKRFiC/DvXxY3TNWu6//pV9EyIfvJwZCPEEauzEZ/AInhwAB3St8PgAg9/jDS75DI4uLWh0dHBzOi8vYWxpY2UuYnRjLmNhbGVuZGFyLm9wZW50aW1lc3RhbXBzLm9yZ//wCM2q2XfxRDEPCPEgyeHq3uHXtP6rp1OlbiSu0d9HwbpVQDvQfsUXdAYmHysI8CAbGZLYWFd3wwRx3OgFm4DZ2pYLv6cBfZCuSPqJUL4iNwjwENwmdZcLUnd/cfHX3GYewusI8SCIGMNelKHxLmpXL/q5RuZ3OqS31zLbVx9irBWIveRplwjxIKxqpSHvbZbNeOHJFYHbcAThckIhTjLVrsyIV1smRbqfCPEEauzEaPAInlCjRVad0iYAg9/jDS75DI4sK2h0dHBzOi8vYm9iLmJ0Yy5jYWxlbmRhci5vcGVudGltZXN0YW1wcy5vcmfwEC3//m/BYHywVQkMOvQ4AAUI8CAKhkPrG31Ui/hY/ma4R1PuZD5FCI61tK3bZSmexPh5YwjxIKWMzW7UxPgJABVToMD6X/pe/wvZ23FbotaitaeHXm3XCPEg/O/GgCBWOahIZlzaz08fTk5QxDFzyv4XAyL06vQbebcI8CBuKAUX5f8aPpcTSwoOH7B5mbErBf/P9LuXGjzZE2rH8gjxBGrsxGrwCNniuPDDYTwGAIPf4w0u+QyOKShodHRwczovL2Zpbm5leS5jYWxlbmRhci5ldGVybml0eXdhbGwuY29t",
+      "verify_receipt": {
+        "ok": true,
+        "sha256": "13b27232ae0f3d9bb27cd26531a1802d6a6815ec5ac55a81900467aa4bef9ab6",
+        "matches_digest": true,
+        "matches_ots_header": true,
+        "note": "Local digest match. For Bitcoin-anchored proof later: ots upgrade + ots verify"
+      }
+    }
+  ]
+}
