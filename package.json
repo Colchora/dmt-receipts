@@ -1,7 +1,7 @@
 {
   "name": "dmt-receipts-mcp",
-  "version": "0.1.0",
-  "description": "Local MCP server for creating and checking canonical OpenTimestamps receipts for agent memories.",
+  "version": "0.2.0",
+  "description": "Local MCP server that prepares TAP/Ordinals inscription payloads for canonical AI agent memories and checks inscription content.",
   "type": "module",
   "bin": {
     "dmt-receipts-mcp": "./dist/index.js"
@@ -24,10 +24,10 @@
   "keywords": [
     "mcp",
     "model-context-protocol",
-    "opentimestamps",
+    "tap-protocol",
     "bitcoin",
-    "timestamping",
-    "proof-of-existence",
+    "ordinals",
+    "inscriptions",
     "agent-memory",
     "ai-agents",
     "dmt-receipts"

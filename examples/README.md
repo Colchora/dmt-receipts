@@ -1,10 +1,10 @@
-# Example: stamp, then verify
+# Example: prepare, then verify
 
-This walkthrough uses [`stamp-example.json`](./stamp-example.json) as the input to the MCP `stamp_memory` tool. The file shows the required fields; the tool fills in `created_at` when it is omitted.
+This walkthrough uses [`stamp-example.json`](./stamp-example.json) as input to the MCP `prepare_memory` tool.
 
-## 1. Stamp a memory
+## 1. Prepare a memory
 
-Call `stamp_memory` with the contents of the example. Only `agent_id`, `key`, and `content` are required; `tags` defaults to `[]`, and `created_at` is generated in UTC if omitted:
+Call `prepare_memory` with:
 
 ```json
 {
@@ -15,25 +15,24 @@ Call `stamp_memory` with the contents of the example. Only `agent_id`, `key`, an
 }
 ```
 
-The result includes `memory`, `canonical`, `sha256`, `calendars`, `status`, and `ots_base64`. Keep the returned `memory` and `ots_base64` together in storage you control. The initial `status` is `pending`; it does not mean the proof is already anchored in a Bitcoin block.
+The result includes `memory`, `canonical`, `sha256`, `status: "prepared"`, and `inscription_recipe`. Inscribe `inscription_recipe.content_utf8` on Bitcoin (TAP Wallet or any Ordinals/TAP tool). This tool does not pay fees or broadcast.
 
-## 2. Check the receipt locally
+## 2. After inscription
 
-Call `verify_receipt` with these two arguments from that same `stamp_memory` result:
+Store `memory` with the resulting `inscription_id` and `txid`.
 
-- `memory`: the complete returned `memory` object, passed as an object (do not stringify it).
-- `ots_base64`: the returned base64 string, unchanged.
-- `sha256` (optional): the returned hex digest for an additional cross-check.
+## 3. Verify
 
-A successful result confirms the canonical memory digest matches the digest in the receipt header. This local check does not validate timestamp operations or Bitcoin inclusion; use the OpenTimestamps client below for that.
+Call `verify_inscription`:
 
-## 3. Verify the Bitcoin proof
-
-Decode `ots_base64` and save the bytes as `memory.json.ots`. Save the `canonical` string exactly as UTF-8 bytes, without adding a newline, as `memory.json`. Once the calendar has upgraded the pending receipt (often around 1–3 hours), run:
-
-```sh
-ots upgrade memory.json.ots
-ots verify -f memory.json memory.json.ots
+```json
+{
+  "memory": { "...": "full memory object from prepare_memory" },
+  "inscription_id": "<txid>i0",
+  "sha256": "<hex from prepare_memory>"
+}
 ```
 
-You can also use the [live browser verifier](https://misty-flame-3nw3.here.now/). For protocol details and limitations, see the [main README](../README.md) and [published specification](https://misty-flame-3nw3.here.now/spec.md).
+A successful content fetch confirms the on-chain bytes match. You can also open the returned `explorer_links`.
+
+Live browser UI: https://misty-flame-3nw3.here.now/

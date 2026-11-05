@@ -3,18 +3,17 @@
 ## Data handling
 
 - The server canonicalizes and hashes the memory in its local process.
-- It sends only the raw 32-byte SHA-256 digest—not the memory plaintext—to public OpenTimestamps calendar `/digest` endpoints.
-- It returns the memory and base64 `.ots` receipt to the MCP caller. This project has no storage service, telemetry, or account system.
-- Calendar operators receive the request and may observe connection metadata such as the caller's IP address.
+- `prepare_memory` returns the memory and an inscription recipe to the MCP caller. It does not broadcast Bitcoin transactions.
+- `verify_inscription` may fetch public inscription content from an Ordinals explorer when `inscription_id` is supplied.
+- This project has no storage service, telemetry, or account system.
 
 ## Scope and risks
 
-- **Timestamp:** Once anchored, an OpenTimestamps proof establishes that the exact hashed bytes existed no later than the Bitcoin block time. Calendar availability and Bitcoin confirmation timing are external dependencies.
-- **Local verification:** `verify_receipt` checks canonical memory bytes against the receipt's magic/version/hash-op header and digest. It does not parse the timestamp operations or prove Bitcoin inclusion; use the OpenTimestamps client or live verifier for that.
-- **Privacy:** A digest does not directly disclose its preimage, but short or guessable content may be tested offline. Do not publish hashes of low-entropy private memories without considering this risk.
-- **Authenticity:** A receipt does not prove authorship, identity, ownership, or truth. Use a separate signature and identity-verification scheme if attribution matters.
+- **Permanence:** On-chain Ordinals inscription content under TAP-indexed Bitcoin L1. Fees, fee rates, and indexer availability are external.
+- **Verification:** Content match via local hash and optional HTTP fetch of public inscription bytes. Explorers can be wrong, rate-limit, or change URLs; treat explorer fetch as assistive, not sole consensus.
+- **Privacy:** Inscription content is public. Do not inscribe secrets or low-entropy private memories you cannot disclose.
+- **Authenticity:** A receipt does not prove authorship, identity, ownership, or truth. Use a separate signature scheme if attribution matters.
 
 ## Reporting a vulnerability
 
 Use GitHub's private vulnerability reporting for this repository if it is enabled. If private reporting is unavailable, contact the maintainers through a verified project channel before filing a public issue. Share a minimal reproduction and avoid including private memory content, secrets, or personal data.
-

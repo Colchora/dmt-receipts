@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
- * DMT Receipts MCP server: stamp_memory and verify_receipt.
+ * DMT Receipts MCP server: prepare_memory and verify_inscription.
  * Protocol: https://misty-flame-3nw3.here.now/llms.txt
+ * Permanence: Bitcoin TAP Protocol / Ordinals inscriptions (not calendar digests).
  */
 import { createHash } from "node:crypto";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -11,20 +12,13 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 
-const CALENDARS = [
-  "https://a.pool.opentimestamps.org",
-  "https://b.pool.opentimestamps.org",
-  "https://a.pool.eternitywall.com",
-] as const;
-const CALENDAR_TIMEOUT_MS = 10_000;
-
-/** OpenTimestamps v1 magic header, followed by version and SHA-256 opcode. */
-const OTS_MAGIC = Buffer.from(
-  "004f70656e54696d657374616d7073000050726f6f6600bf89e2e884e89294",
-  "hex"
-);
-const OTS_VERSION = 0x01;
-const OTS_SHA256_OPCODE = 0x08;
+const TAP_DOCS = "https://docs.tap-protocol.com/";
+const TAP_SPECS = "https://github.com/Trac-Systems/tap-protocol-specs";
+const ORD_CONTENT = (id: string) => `https://ordinals.com/content/${encodeURIComponent(id)}`;
+const ORD_INSCRIPTION = (id: string) =>
+  `https://ordinals.com/inscription/${encodeURIComponent(id)}`;
+const MEMPOOL_TX = (txid: string) => `https://mempool.space/tx/${encodeURIComponent(txid)}`;
+const FETCH_TIMEOUT_MS = 15_000;
 
 export type MemoryV1 = {
   agent_id: string;
@@ -130,43 +124,28 @@ function assertMemory(value: unknown): asserts value is MemoryV1 {
   canonicalJson(memory);
 }
 
-type CalendarReply = { url: string; body?: Buffer; error?: string };
-
-async function postDigest(calendar: string, digest: Buffer): Promise<CalendarReply> {
-  try {
-    const response = await fetch(`${calendar}/digest`, {
-      method: "POST",
-      headers: {
-        Accept: "application/vnd.opentimestamps.v1",
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: new Uint8Array(digest),
-      signal: AbortSignal.timeout(CALENDAR_TIMEOUT_MS),
-    });
-    if (!response.ok) return { url: calendar, error: `HTTP ${response.status}` };
-    const body = Buffer.from(await response.arrayBuffer());
-    if (body.length === 0) return { url: calendar, error: "empty response" };
-    return { url: calendar, body };
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
-    return { url: calendar, error: reason };
-  }
-}
-
-export async function stampMemory(args: {
+export function prepareMemory(args: {
   agent_id: string;
   key: string;
   content: unknown;
   tags?: string[];
   created_at?: string;
-}): Promise<{
+}): {
   memory: MemoryV1;
   canonical: string;
   sha256: string;
-  calendars: string[];
-  status: "pending";
-  ots_base64: string;
-}> {
+  byte_length: number;
+  status: "prepared";
+  inscription_recipe: {
+    content_type: string;
+    content_utf8: string;
+    optional_tap_dta: string;
+    optional_tap_op_example: Record<string, string>;
+    tap_docs: string;
+    tap_specs: string;
+    note: string;
+  };
+} {
   const memory: MemoryV1 = {
     agent_id: args.agent_id,
     content: args.content,
@@ -176,93 +155,144 @@ export async function stampMemory(args: {
   };
   assertMemory(memory);
 
-  const canonical = canonicalBytes(memory);
-  const digest = sha256(canonical);
-  const replies = await Promise.all(CALENDARS.map((calendar) => postDigest(calendar, digest)));
-  const successful = replies.filter(
-    (reply): reply is CalendarReply & { body: Buffer } => reply.body !== undefined
-  );
-  if (successful.length === 0) {
-    const detail = replies.map(({ url, error }) => `${url}: ${error}`).join("; ");
-    throw new Error(`All OpenTimestamps calendars failed (${detail})`);
-  }
-
-  // Fork-join calendar responses using the protocol's 0xff marker.
-  const timestampBody = Buffer.concat(
-    successful.flatMap(({ body }, index) =>
-      index < successful.length - 1 ? [Buffer.from([0xff]), body] : [body]
-    )
-  );
-  const ots = Buffer.concat([
-    OTS_MAGIC,
-    Buffer.from([OTS_VERSION, OTS_SHA256_OPCODE]),
-    digest,
-    timestampBody,
-  ]);
+  const canonicalBuf = canonicalBytes(memory);
+  const digest = sha256(canonicalBuf);
+  const hex = digest.toString("hex");
+  const canonical = canonicalBuf.toString("utf8");
+  const dta = `sha256:${hex}`.slice(0, 512);
 
   return {
     memory,
-    canonical: canonical.toString("utf8"),
-    sha256: digest.toString("hex"),
-    calendars: successful.map(({ url }) => url),
-    status: "pending",
-    ots_base64: ots.toString("base64"),
+    canonical,
+    sha256: hex,
+    byte_length: canonicalBuf.length,
+    status: "prepared",
+    inscription_recipe: {
+      content_type: "application/json",
+      content_utf8: canonical,
+      optional_tap_dta: dta,
+      optional_tap_op_example: {
+        p: "tap",
+        op: "token-deploy",
+        tick: "example",
+        max: "1",
+        lim: "1",
+        dec: "0",
+        dta,
+      },
+      tap_docs: TAP_DOCS,
+      tap_specs: TAP_SPECS,
+      note:
+        "Inscribe content_utf8 as Ordinals content (application/json or text/plain). This MCP tool does not broadcast Bitcoin transactions or pay fees. optional_tap_op_example is only for token-deploy flows that carry dta (≤512 bytes); it does not replace content inscription for full memories.",
+    },
   };
 }
 
-export function verifyReceiptLocal(args: {
+export async function verifyInscription(args: {
   memory: MemoryV1;
-  ots_base64: string;
+  inscription_id?: string;
+  txid?: string;
   sha256?: string;
-}): {
+  fetch_content?: boolean;
+}): Promise<{
   ok: boolean;
   sha256: string;
-  matches_digest: boolean;
-  matches_ots_header: boolean;
+  byte_length: number;
+  matches_expected_sha256: boolean;
+  content_fetch: {
+    attempted: boolean;
+    ok: boolean;
+    matches_canonical: boolean;
+    remote_sha256?: string;
+    error?: string;
+  };
+  explorer_links: string[];
   note: string;
-} {
+}> {
   assertMemory(args.memory);
-  const canonical = canonicalBytes(args.memory);
-  const digest = sha256(canonical);
+  const canonicalBuf = canonicalBytes(args.memory);
+  const digest = sha256(canonicalBuf);
   const hex = digest.toString("hex");
-  const validBase64 =
-    args.ots_base64.length > 0 &&
-    args.ots_base64.length % 4 === 0 &&
-    /^[A-Za-z0-9+/]*={0,2}$/.test(args.ots_base64) &&
-    Buffer.from(args.ots_base64, "base64").toString("base64") === args.ots_base64;
-  const ots = validBase64 ? Buffer.from(args.ots_base64, "base64") : Buffer.alloc(0);
-  const headerLength = OTS_MAGIC.length + 2 + digest.length;
-  const headerOk =
-    ots.length >= headerLength &&
-    ots.subarray(0, OTS_MAGIC.length).equals(OTS_MAGIC) &&
-    ots[OTS_MAGIC.length] === OTS_VERSION &&
-    ots[OTS_MAGIC.length + 1] === OTS_SHA256_OPCODE;
-  const digestInOts = headerOk && ots.subarray(OTS_MAGIC.length + 2, headerLength).equals(digest);
   const hexOk = !args.sha256 || args.sha256.toLowerCase() === hex;
-  const ok = headerOk && digestInOts && hexOk;
+
+  const links: string[] = [];
+  if (args.inscription_id) {
+    links.push(ORD_INSCRIPTION(args.inscription_id));
+    links.push(ORD_CONTENT(args.inscription_id));
+  }
+  if (args.txid) links.push(MEMPOOL_TX(args.txid));
+
+  const contentFetch = {
+    attempted: false,
+    ok: false,
+    matches_canonical: false,
+    remote_sha256: undefined as string | undefined,
+    error: undefined as string | undefined,
+  };
+
+  const shouldFetch = args.fetch_content !== false && Boolean(args.inscription_id);
+  if (shouldFetch && args.inscription_id) {
+    contentFetch.attempted = true;
+    try {
+      const response = await fetch(ORD_CONTENT(args.inscription_id), {
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+      if (!response.ok) {
+        contentFetch.error = `HTTP ${response.status}`;
+      } else {
+        const remote = Buffer.from(await response.arrayBuffer());
+        contentFetch.ok = true;
+        contentFetch.remote_sha256 = sha256(remote).toString("hex");
+        contentFetch.matches_canonical =
+          remote.equals(canonicalBuf) || contentFetch.remote_sha256 === hex;
+      }
+    } catch (error) {
+      contentFetch.error = error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  const ok =
+    hexOk &&
+    (!contentFetch.attempted || contentFetch.matches_canonical) &&
+    Boolean(args.inscription_id || args.txid || contentFetch.matches_canonical);
+
+  let note: string;
+  if (contentFetch.matches_canonical) {
+    note =
+      "Inscription content matches canonical memory bytes. Confirm explorer/TAP indexer links for human review.";
+  } else if (!args.inscription_id && !args.txid) {
+    note =
+      "Local canonical hash only. Provide inscription_id (preferred) or txid, then re-run with fetch_content true.";
+  } else if (contentFetch.attempted && !contentFetch.matches_canonical) {
+    note =
+      "Could not confirm content match via ordinals.com fetch. Open explorer_links and compare bytes manually. Fees/indexing are outside this tool.";
+  } else {
+    note =
+      "Prepared local digest is consistent. On-chain permanence requires a confirmed Ordinals inscription whose content equals the canonical UTF-8 JSON.";
+  }
 
   return {
-    ok,
+    ok: Boolean(ok && hexOk && (contentFetch.matches_canonical || !contentFetch.attempted)),
     sha256: hex,
-    matches_digest: digestInOts && hexOk,
-    matches_ots_header: headerOk,
-    note: ok
-      ? "Local digest match only. For Bitcoin-anchored proof, run: ots upgrade receipt.ots && ots verify -f memory.json receipt.ots"
-      : "Local check failed: canonical bytes do not match a valid .ots header and digest.",
+    byte_length: canonicalBuf.length,
+    matches_expected_sha256: hexOk,
+    content_fetch: contentFetch,
+    explorer_links: links,
+    note,
   };
 }
 
 const server = new Server(
-  { name: "dmt-receipts", version: "0.1.0" },
+  { name: "dmt-receipts", version: "0.2.0" },
   { capabilities: { tools: {} } }
 );
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
     {
-      name: "stamp_memory",
+      name: "prepare_memory",
       description:
-        "Canonicalize a dmt-memory/v1 JSON memory, SHA-256 it, stamp the digest on public OpenTimestamps calendars, and return the memory plus a base64 .ots receipt. Proves the exact bytes existed no later than a Bitcoin block time; does not prove authorship. Stores nothing.",
+        "Canonicalize a dmt-memory/v1 JSON memory, SHA-256 it, and return an Ordinals/TAP inscription recipe (content UTF-8 + optional dta pointer). Does not broadcast a Bitcoin transaction or pay fees. Permanence requires inscribing the content on Bitcoin L1 via TAP Wallet or any Ordinals/TAP tool.",
       inputSchema: {
         type: "object",
         properties: {
@@ -285,9 +315,9 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
     {
-      name: "verify_receipt",
+      name: "verify_inscription",
       description:
-        "Locally check that a base64 OpenTimestamps receipt header and digest match a dmt-memory/v1 object's canonical SHA-256. Does not validate calendar operations or Bitcoin inclusion; use ots upgrade/verify for full proof verification.",
+        "Recompute the canonical SHA-256 of a dmt-memory/v1 object and, when inscription_id is provided, attempt to fetch Ordinals content and compare bytes. Returns explorer links. Does not use calendar digest proofs.",
       inputSchema: {
         type: "object",
         properties: {
@@ -295,13 +325,21 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
             type: "object",
             description: "Full dmt-memory/v1 object (agent_id, key, content, tags, created_at)",
           },
-          ots_base64: { type: "string", description: "Base64-encoded .ots receipt" },
+          inscription_id: {
+            type: "string",
+            description: "Bitcoin Ordinals inscription id (txid + 'i' + index)",
+          },
+          txid: { type: "string", description: "Optional Bitcoin transaction id" },
           sha256: {
             type: "string",
             description: "Optional expected hex digest to cross-check",
           },
+          fetch_content: {
+            type: "boolean",
+            description: "Fetch inscription content from ordinals.com when inscription_id is set (default true)",
+          },
         },
-        required: ["memory", "ots_base64"],
+        required: ["memory"],
       },
     },
   ],
@@ -312,7 +350,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const args = (rawArgs ?? {}) as Record<string, unknown>;
 
   try {
-    if (name === "stamp_memory") {
+    if (name === "prepare_memory") {
       if (typeof args.agent_id !== "string") throw new Error("agent_id must be a string");
       if (typeof args.key !== "string") throw new Error("key must be a string");
       if (
@@ -324,7 +362,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       if (args.created_at !== undefined && typeof args.created_at !== "string") {
         throw new Error("created_at must be a string");
       }
-      const result = await stampMemory({
+      const result = prepareMemory({
         agent_id: args.agent_id,
         key: args.key,
         content: args.content,
@@ -334,15 +372,22 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }
 
-    if (name === "verify_receipt") {
-      if (typeof args.ots_base64 !== "string") throw new Error("ots_base64 must be a string");
+    if (name === "verify_inscription") {
       if (args.sha256 !== undefined && typeof args.sha256 !== "string") {
         throw new Error("sha256 must be a string");
       }
-      const result = verifyReceiptLocal({
+      if (args.inscription_id !== undefined && typeof args.inscription_id !== "string") {
+        throw new Error("inscription_id must be a string");
+      }
+      if (args.txid !== undefined && typeof args.txid !== "string") {
+        throw new Error("txid must be a string");
+      }
+      const result = await verifyInscription({
         memory: args.memory as MemoryV1,
-        ots_base64: args.ots_base64,
+        inscription_id: args.inscription_id as string | undefined,
+        txid: args.txid as string | undefined,
         sha256: args.sha256 as string | undefined,
+        fetch_content: args.fetch_content as boolean | undefined,
       });
       return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
     }

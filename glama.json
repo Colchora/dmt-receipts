@@ -1,4 +1,7 @@
 {
   "$schema": "https://glama.ai/mcp/schemas/server.json",
-  "maintainers": ["Colchora"]
+  "maintainers": [
+    "Colchora"
+  ],
+  "description": "Prepare TAP/Ordinals inscription payloads for AI agent memories and verify inscription content on Bitcoin."
 }

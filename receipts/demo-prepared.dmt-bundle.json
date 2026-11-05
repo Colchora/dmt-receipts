@@ -1,0 +1,31 @@
+{
+  "format": "dmt-tap-receipt-bundle/v1",
+  "exported_at": "2026-11-05T19:05:00Z",
+  "note": "Sample prepared receipt \u2014 not yet inscribed. Replace inscription_id/txid after a real on-chain write.",
+  "receipts": [
+    {
+      "memory": {
+        "agent_id": "demo-agent",
+        "content": "User prefers concise diffs and UTC-5 timestamps.",
+        "created_at": "2026-11-05T19:00:00Z",
+        "key": "prefs/style",
+        "tags": [
+          "preferences",
+          "ui"
+        ]
+      },
+      "canonical": "{\"agent_id\":\"demo-agent\",\"content\":\"User prefers concise diffs and UTC-5 timestamps.\",\"created_at\":\"2026-11-05T19:00:00Z\",\"key\":\"prefs/style\",\"tags\":[\"preferences\",\"ui\"]}",
+      "sha256": "76f3f9ff531cecbfe46e676e932f9b0d9d02b3d7c04e5a558924a8092cb0294b",
+      "inscription_id": null,
+      "txid": null,
+      "status": "prepared",
+      "protocol": "tap-ordinals",
+      "inscription_recipe": {
+        "content_type": "application/json",
+        "optional_tap_dta": "sha256:76f3f9ff531cecbfe46e676e932f9b0d9d02b3d7c04e5a558924a8092cb0294b",
+        "tap_docs": "https://docs.tap-protocol.com/",
+        "tap_specs": "https://github.com/Trac-Systems/tap-protocol-specs"
+      }
+    }
+  ]
+}
