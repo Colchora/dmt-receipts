@@ -14,4 +14,4 @@ npm ci
 npm test
 ```
 
-`npm test` rebuilds `dist/` and runs the unit tests. Include or update tests when behavior changes. Never include private memory content, credentials, or generated `node_modules` in a contribution.
+`npm test` rebuilds `dist/`, runs the unit tests, and runs `examples/run-demo.mjs`. That demo locks the published digest in `examples/expected-digest.json`. Include or update tests when behavior changes. Never include private memory content, credentials, or generated `node_modules` in a contribution.

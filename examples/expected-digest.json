@@ -1,0 +1,14 @@
+{
+  "sha256": "76f3f9ff531cecbfe46e676e932f9b0d9d02b3d7c04e5a558924a8092cb0294b",
+  "byte_length": 170,
+  "canonical": "{\"agent_id\":\"demo-agent\",\"content\":\"User prefers concise diffs and UTC-5 timestamps.\",\"created_at\":\"2026-11-05T19:00:00Z\",\"key\":\"prefs/style\",\"tags\":[\"preferences\",\"ui\"]}",
+  "prepare": {
+    "status": "prepared"
+  },
+  "verify_without_inscription": {
+    "fetch_content": false,
+    "include_trac": false,
+    "matches_expected_sha256": true,
+    "ok": false
+  }
+}

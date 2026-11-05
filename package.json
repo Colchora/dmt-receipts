@@ -13,6 +13,7 @@
     "CONTRIBUTING.md",
     "LICENSE",
     "README.md",
+    "llms.txt",
     "SECURITY.md"
   ],
   "scripts": {
@@ -20,7 +21,8 @@
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
     "prepare": "npm run build",
-    "test": "npm run build && node --test test/canonical.test.mjs test/verify.test.mjs",
+    "test": "npm run build && node --test test/canonical.test.mjs test/verify.test.mjs && node examples/run-demo.mjs",
+    "demo": "npm run build && node examples/run-demo.mjs",
     "bench": "npm run build && node scripts/bench-prepare.mjs"
   },
   "keywords": [
