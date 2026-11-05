@@ -5,3 +5,4 @@ memory-bundle.json
 .DS_Store
 .env
 *.log
+.tsbuildinfo

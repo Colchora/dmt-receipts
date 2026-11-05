@@ -1,7 +1,9 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.Colchora/dmt-receipts",
+  "title": "DMT Receipts",
   "description": "Prepare and verify TAP/Ordinals payloads for AI agent memories on Bitcoin.",
+  "websiteUrl": "https://misty-flame-3nw3.here.now/",
   "repository": {
     "url": "https://github.com/Colchora/dmt-receipts",
     "source": "github"
