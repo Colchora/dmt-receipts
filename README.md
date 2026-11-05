@@ -2,9 +2,9 @@
 
 **Portable, Bitcoin-permanent agent memories via the TAP Protocol / Ordinals.**
 
-DMT Receipts turns a canonical `dmt-memory/v1` JSON object into an inscription-ready payload. Permanence means the memory bytes are committed on Bitcoin L1 as Ordinals inscription content under [TAP](https://docs.tap-protocol.com/) (`"p":"tap"`). Keep the memory and inscription id / txid in storage you control.
+DMT Receipts is a local stdio MCP server (`prepare_memory`, `verify_inscription`) and a [browser demo](https://misty-flame-3nw3.here.now/). It turns a five-field `dmt-memory/v1` JSON object into an inscription-ready payload. Permanence means those memory bytes are committed on Bitcoin L1 as Ordinals inscription content under [TAP](https://docs.tap-protocol.com/) (`"p":"tap"`). Keep the memory and inscription id / txid in storage you control. After `prepare_memory`, status is **prepared**. A wallet or Ordinals tool inscribes the bytes and pays the Bitcoin fee.
 
-[Live site](https://misty-flame-3nw3.here.now/) · [Protocol recipe](https://misty-flame-3nw3.here.now/llms.txt) · [Full specification](https://misty-flame-3nw3.here.now/spec.md) · [TAP specs](https://github.com/Trac-Systems/tap-protocol-specs)
+[Live site](https://misty-flame-3nw3.here.now/) · [Protocol recipe](https://misty-flame-3nw3.here.now/llms.txt) · [Repo show-and-tell](./llms.txt) · [Full specification](https://misty-flame-3nw3.here.now/spec.md) · [TAP specs](https://github.com/Trac-Systems/tap-protocol-specs)
 
 [![MIT license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE) [![Node.js 18+](https://img.shields.io/badge/Node.js-18%2B-339933.svg)](https://nodejs.org/)
 
@@ -19,10 +19,12 @@ The live site prepares and verifies a memory in the browser. Nothing is uploaded
 | Prepare a memory, no install | [Live app → Anchor](https://misty-flame-3nw3.here.now/#anchor) |
 | Verify an inscription | [Live app → Verify](https://misty-flame-3nw3.here.now/#verify) |
 | Receipts saved in this browser | [Live app → Receipts](https://misty-flame-3nw3.here.now/#receipts) |
-| One-file recipe for agents | [llms.txt](https://misty-flame-3nw3.here.now/llms.txt) |
+| Prove the local tools | `npm ci` then `node examples/run-demo.mjs` |
+| Agent index (tools, run, demo) | [`llms.txt`](./llms.txt) in this repo |
+| Canonical byte rules | [live llms.txt](https://misty-flame-3nw3.here.now/llms.txt) |
 | Full protocol | [spec.md](https://misty-flame-3nw3.here.now/spec.md) |
 | Machine-readable manifest | [agent.json](https://misty-flame-3nw3.here.now/agent.json) |
-| MCP registry id | `io.github.Colchora/dmt-receipts` |
+| MCP registry id | `io.github.Colchora/dmt-receipts` ([`server.json`](./server.json), [`glama.json`](./glama.json)) |
 
 Optional honor-system funding is separate from inscription fees: [Support](https://misty-flame-3nw3.here.now/#support) and [Buyback](https://misty-flame-3nw3.here.now/#buyback).
 
@@ -36,16 +38,44 @@ Optional honor-system funding is separate from inscription fees: [Support](https
 
 This MCP server **does not** broadcast transactions or pay fees. Status after `prepare_memory` is **prepared**, not inscribed.
 
-## Quickstart
+## Show and tell
+
+Node.js 18+. `npm ci` installs dependencies and builds `dist/index.js`. The server speaks MCP on stdin and stays open until a client connects.
 
 ```sh
 git clone https://github.com/Colchora/dmt-receipts.git
 cd dmt-receipts
-npm install
-node dist/index.js
+npm ci
+node examples/run-demo.mjs
 ```
 
-`npm install` builds `dist/` (Node.js 18+). Cursor, Claude Desktop, and other MCP clients use the same stdio config. In Cursor, put it in `.cursor/mcp.json`:
+The script calls `prepare_memory` on [`examples/demo-memory.json`](./examples/demo-memory.json), then `verify_inscription` with no inscription id. A passing run prints:
+
+| Check | Value |
+| --- | --- |
+| `sha256` | `76f3f9ff531cecbfe46e676e932f9b0d9d02b3d7c04e5a558924a8092cb0294b` |
+| `byte_length` | 170 |
+| `status` | `prepared` |
+| `matches_expected_sha256` | true |
+| `ok` | false until the bytes are inscribed |
+
+`ok` stays false while the memory is only prepared. Inscription content that matches the canonical bytes is what makes a later verify succeed. The same numbers are in [`examples/expected-digest.json`](./examples/expected-digest.json).
+
+Cursor loads [`.cursor/mcp.json`](./.cursor/mcp.json) after the build. `${workspaceFolder}` is the directory that contains that file:
+
+```json
+{
+  "mcpServers": {
+    "dmt-receipts": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["${workspaceFolder}/dist/index.js"]
+    }
+  }
+}
+```
+
+Claude Desktop and other clients use an absolute path to the built file:
 
 ```json
 {
@@ -58,12 +88,14 @@ node dist/index.js
 }
 ```
 
+Call `prepare_memory` with the five fields in `examples/demo-memory.json` (`agent_id`, `key`, `content`, `tags`, `created_at`). Pass the returned `memory` and `sha256` to `verify_inscription` with `fetch_content: false` and `include_trac: false` until you have an `inscription_id`.
+
 Tools:
 
 - `prepare_memory` — canonicalize a memory, hash it, and return an Ordinals/TAP inscription recipe (content UTF-8 + optional `dta` pointer).
 - `verify_inscription` — recompute the digest; optionally fetch inscription content and compare; return explorer links.
 
-See [`examples/README.md`](./examples/README.md).
+Walkthrough: [`examples/README.md`](./examples/README.md). Agent index: [`llms.txt`](./llms.txt). Protocol bytes: [live llms.txt](https://misty-flame-3nw3.here.now/llms.txt).
 
 ## Prepare, inscribe, verify
 

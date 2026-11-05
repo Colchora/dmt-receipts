@@ -3,5 +3,5 @@
   "maintainers": [
     "Colchora"
   ],
-  "description": "Prepare TAP/Ordinals inscription payloads for AI agent memories and verify inscription content on Bitcoin."
+  "description": "stdio MCP for Bitcoin TAP/Ordinals agent memories. Tools: prepare_memory, verify_inscription. Run: git clone, npm ci, node dist/index.js (Cursor: .cursor/mcp.json). Live demo: https://misty-flame-3nw3.here.now/ Proof: node examples/run-demo.mjs"
 }

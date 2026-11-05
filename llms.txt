@@ -1,0 +1,72 @@
+# DMT Receipts
+
+> Local stdio MCP server and browser demo for five-field `dmt-memory/v1` agent memories. `prepare_memory` returns a TAP/Ordinals inscription payload and SHA-256. `verify_inscription` recomputes that digest and can compare public inscription bytes. Permanence is the inscribed Bitcoin content. After prepare, status is `prepared`. A wallet or Ordinals tool inscribes and pays fees separately.
+
+Repository show-and-tell for agents. Byte rules for the five fields (`agent_id`, `key`, `content`, `tags`, `created_at`) stay on the live protocol recipe. Optional extension fields are kept and hashed. This file does not redefine canonicalization.
+
+## Run
+
+Node.js 18+. `npm ci` builds `dist/index.js`. The demo calls both tools on a fixed memory and checks the published digest.
+
+```sh
+git clone https://github.com/Colchora/dmt-receipts.git
+cd dmt-receipts
+npm ci
+node examples/run-demo.mjs
+```
+
+Expected: `sha256` `76f3f9ff531cecbfe46e676e932f9b0d9d02b3d7c04e5a558924a8092cb0294b`, `byte_length` 170, `status` `prepared`, `matches_expected_sha256` true, `ok` false. `ok` stays false until `inscription_id` points at inscription content that matches those bytes.
+
+The server speaks MCP on stdin. Start it from an MCP client. A bare `node dist/index.js` waits for that client.
+
+## MCP
+
+Cursor, after `npm ci`, uses `.cursor/mcp.json`. `${workspaceFolder}` is the directory that contains that file.
+
+```json
+{
+  "mcpServers": {
+    "dmt-receipts": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["${workspaceFolder}/dist/index.js"]
+    }
+  }
+}
+```
+
+Claude Desktop and other clients:
+
+```json
+{
+  "mcpServers": {
+    "dmt-receipts": {
+      "command": "node",
+      "args": ["/absolute/path/to/dmt-receipts/dist/index.js"]
+    }
+  }
+}
+```
+
+Call `prepare_memory` with `examples/demo-memory.json`. Pass the returned `memory` and `sha256` to `verify_inscription` with `fetch_content` false and `include_trac` false until an inscription exists.
+
+## Tools
+
+- `prepare_memory` — required `agent_id`, `key`, `content`. Optional `tags` (string array, default `[]`) and `created_at` (ISO-8601 UTC, whole seconds, ending in `Z`; default is the current UTC second). Returns `memory`, `canonical`, `sha256`, `byte_length`, `status` `prepared`, and `inscription_recipe` (`content_utf8` plus optional TAP `dta`).
+- `verify_inscription` — required `memory` (the five fields, plus any extensions). Optional `inscription_id`, `txid`, `sha256`, `fetch_content` (default true when `inscription_id` is set), `include_trac` (default true when `inscription_id` is set), `trac_rest_base`. Returns the recomputed digest, explorer links, and a content-fetch result.
+
+## Links
+
+- [Live prepare](https://misty-flame-3nw3.here.now/#anchor): browser demo, no install
+- [Live verify](https://misty-flame-3nw3.here.now/#verify): compare a memory with inscription content
+- [Live receipts](https://misty-flame-3nw3.here.now/#receipts): receipts kept in this browser
+- [Protocol recipe](https://misty-flame-3nw3.here.now/llms.txt): canonical JSON rules (source of truth)
+- [Specification](https://misty-flame-3nw3.here.now/spec.md): full protocol
+- [Agent manifest](https://misty-flame-3nw3.here.now/agent.json): machine-readable capabilities
+- [Demo memory](examples/demo-memory.json): five-field input with a fixed timestamp
+- [Expected digest](examples/expected-digest.json): SHA-256 that input must produce
+- [Cursor MCP config](.cursor/mcp.json): stdio server after the build
+- [MCP registry manifest](server.json): `io.github.Colchora/dmt-receipts`
+- [Glama metadata](glama.json): maintainer listing
+- [TAP docs](https://docs.tap-protocol.com/): protocol the inscription uses
+- [Source](https://github.com/Colchora/dmt-receipts): this repository
