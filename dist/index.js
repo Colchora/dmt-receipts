@@ -14,6 +14,206 @@ const ORD_CONTENT = (id) => `https://ordinals.com/content/${encodeURIComponent(i
 const ORD_INSCRIPTION = (id) => `https://ordinals.com/inscription/${encodeURIComponent(id)}`;
 const MEMPOOL_TX = (txid) => `https://mempool.space/tx/${encodeURIComponent(txid)}`;
 const FETCH_TIMEOUT_MS = 15_000;
+const TRAC_WS_URL = "https://tap.trac.network";
+const TRAC_TIMEOUT_MS = 8_000;
+function normalizeTracRestBase(raw) {
+    const value = (raw || "").trim();
+    if (!value)
+        return "";
+    const url = new URL(value);
+    if (!["http:", "https:"].includes(url.protocol)) {
+        throw new Error("trac_rest_base must be http(s)");
+    }
+    if (url.username || url.password || url.search || url.hash) {
+        throw new Error("trac_rest_base must not include credentials, query, or fragment");
+    }
+    return url.href.replace(/\/+$/, "");
+}
+function unwrapTracPayload(msg) {
+    if (msg && typeof msg === "object") {
+        const record = msg;
+        if (record.error) {
+            throw new Error(typeof record.error === "string" ? record.error : JSON.stringify(record.error));
+        }
+        if (Object.prototype.hasOwnProperty.call(record, "result"))
+            return record.result;
+    }
+    if (msg === undefined)
+        throw new Error("No result returned");
+    return msg;
+}
+async function tracRestGet(base, func, args = []) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TRAC_TIMEOUT_MS);
+    try {
+        const path = base +
+            "/" +
+            func +
+            (args.length ? "/" + args.map((x) => encodeURIComponent(String(x))).join("/") : "");
+        const response = await fetch(path, {
+            signal: controller.signal,
+            headers: { Accept: "application/json" },
+        });
+        if (!response.ok)
+            throw new Error(`HTTP ${response.status}`);
+        const result = unwrapTracPayload(await response.json());
+        return { ok: true, result, source: "self-hosted REST" };
+    }
+    catch (error) {
+        const message = error instanceof Error
+            ? error.name === "AbortError"
+                ? "REST lookup timed out"
+                : error.message
+            : String(error);
+        return { ok: false, error: message, source: "self-hosted REST" };
+    }
+    finally {
+        clearTimeout(timer);
+    }
+}
+async function tracSocketGet(func, args = []) {
+    let io;
+    try {
+        ({ io } = await import("socket.io-client"));
+    }
+    catch (error) {
+        return {
+            ok: false,
+            error: error instanceof Error
+                ? `socket.io-client unavailable: ${error.message}`
+                : "socket.io-client unavailable",
+            source: "public WS",
+        };
+    }
+    return await new Promise((resolve) => {
+        let done = false;
+        const call_id = `dmt-mcp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+        const socket = io(TRAC_WS_URL, {
+            autoConnect: false,
+            reconnection: false,
+            timeout: TRAC_TIMEOUT_MS,
+            forceNew: true,
+            transports: ["websocket"],
+        });
+        const finish = (value) => {
+            if (done)
+                return;
+            done = true;
+            clearTimeout(timer);
+            socket.removeAllListeners();
+            try {
+                socket.close();
+            }
+            catch {
+                try {
+                    socket.disconnect();
+                }
+                catch {
+                    /* ignore */
+                }
+            }
+            resolve({ ...value, source: "public WS" });
+        };
+        const onResponse = (msg) => {
+            if (!msg || typeof msg !== "object")
+                return;
+            const record = msg;
+            if (record.call_id !== call_id)
+                return;
+            try {
+                if (!Object.prototype.hasOwnProperty.call(record, "result")) {
+                    throw new Error(typeof record.error === "string" ? record.error : "Malformed Trac response");
+                }
+                finish({ ok: true, result: unwrapTracPayload(msg) });
+            }
+            catch (error) {
+                finish({
+                    ok: false,
+                    error: error instanceof Error ? error.message : String(error),
+                });
+            }
+        };
+        const onError = (err) => finish({ ok: false, error: err?.message || "Connection failed" });
+        const onDisconnect = () => finish({ ok: false, error: "Connection closed" });
+        const timer = setTimeout(() => finish({ ok: false, error: `Lookup timed out after ${TRAC_TIMEOUT_MS} ms` }), TRAC_TIMEOUT_MS);
+        try {
+            socket.on("response", onResponse);
+            socket.on("connect_error", onError);
+            socket.on("disconnect", onDisconnect);
+            socket.emit("get", { func, args, call_id });
+            if (!socket.connected)
+                socket.connect();
+        }
+        catch (error) {
+            finish({
+                ok: false,
+                error: error instanceof Error ? error.message : String(error),
+            });
+        }
+    });
+}
+async function tracLookup(restBase, restFunc, wsFunc, args) {
+    // REST base set → REST only (self-hosted). Else public Socket.IO.
+    if (restBase)
+        return tracRestGet(restBase, restFunc, args);
+    return tracSocketGet(wsFunc, args);
+}
+export async function fetchTracMetadata(args) {
+    let restBase = "";
+    try {
+        restBase = normalizeTracRestBase(args.trac_rest_base !== undefined ? args.trac_rest_base : process.env.DMT_TRAC_REST);
+    }
+    catch (error) {
+        return {
+            ok: false,
+            error: error instanceof Error ? error.message : String(error),
+        };
+    }
+    try {
+        const queries = [
+            ["deployment_tap", "getDeployment", "deployment", ["tap"]],
+            ["dmt_mint_holder", "getDmtMintHolder", "dmtMintHolder", [args.inscription_id]],
+            [
+                "transfer_amount",
+                "getTransferAmountByInscription",
+                "transferAmountByInscription",
+                [args.inscription_id],
+            ],
+            ["accumulator", "getAccumulator", "accumulator", [args.inscription_id]],
+        ];
+        const settled = await Promise.all(queries.map(async ([key, restFunc, wsFunc, callArgs]) => {
+            const result = await tracLookup(restBase, restFunc, wsFunc, callArgs);
+            return [key, result];
+        }));
+        const out = { ok: false };
+        const errors = [];
+        for (const [key, result] of settled) {
+            if (result.ok) {
+                out.ok = true;
+                out.source = out.source || result.source;
+                out[key] = result.result;
+            }
+            else if (result.error) {
+                errors.push(`${key}: ${result.error}`);
+            }
+        }
+        if (!out.ok) {
+            out.error =
+                errors.join("; ") ||
+                    "Trac index unreachable (public endpoint may be down; set DMT_TRAC_REST / trac_rest_base for self-hosted tap-reader)";
+        }
+        else if (errors.length) {
+            out.error = `Partial Trac results; some lookups failed: ${errors.join("; ")}`;
+        }
+        return out;
+    }
+    catch (error) {
+        return {
+            ok: false,
+            error: error instanceof Error ? error.message : String(error),
+        };
+    }
+}
 function compareCodePoints(left, right) {
     const a = Array.from(left, (char) => char.codePointAt(0));
     const b = Array.from(right, (char) => char.codePointAt(0));
@@ -201,6 +401,14 @@ export async function verifyInscription(args) {
         note =
             "Prepared local digest is consistent. On-chain permanence requires a confirmed Ordinals inscription whose content equals the canonical UTF-8 JSON.";
     }
+    let trac;
+    const includeTrac = args.include_trac !== false;
+    if (includeTrac && args.inscription_id) {
+        trac = await fetchTracMetadata({
+            inscription_id: args.inscription_id,
+            trac_rest_base: args.trac_rest_base,
+        });
+    }
     return {
         ok: Boolean(ok && hexOk && (contentFetch.matches_canonical || !contentFetch.attempted)),
         sha256: hex,
@@ -209,6 +417,7 @@ export async function verifyInscription(args) {
         content_fetch: contentFetch,
         explorer_links: links,
         note,
+        ...(trac ? { trac } : {}),
     };
 }
 const server = new Server({ name: "dmt-receipts", version: "0.2.0" }, { capabilities: { tools: {} } });
@@ -240,7 +449,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         },
         {
             name: "verify_inscription",
-            description: "Recompute the canonical SHA-256 of a dmt-memory/v1 object and, when inscription_id is provided, attempt to fetch Ordinals content and compare bytes. Returns explorer links. Does not use calendar digest proofs.",
+            description: "Recompute the canonical SHA-256 of a dmt-memory/v1 object and, when inscription_id is provided, attempt to fetch Ordinals content and compare bytes. Optionally enrich with soft-fail Trac Network TAP/DMT index metadata (deployment, mint holder, transfer amount, accumulator). Returns explorer links plus a trac object. Does not use calendar digest proofs.",
             inputSchema: {
                 type: "object",
                 properties: {
@@ -260,6 +469,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
                     fetch_content: {
                         type: "boolean",
                         description: "Fetch inscription content from ordinals.com when inscription_id is set (default true)",
+                    },
+                    include_trac: {
+                        type: "boolean",
+                        description: "When inscription_id is set, query Trac TAP/DMT index metadata (default true). Soft-fails if Trac is down.",
+                    },
+                    trac_rest_base: {
+                        type: "string",
+                        description: "Optional self-hosted tap-reader REST origin. Falls back to env DMT_TRAC_REST, then public Socket.IO at tap.trac.network.",
                     },
                 },
                 required: ["memory"],
@@ -302,12 +519,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             if (args.txid !== undefined && typeof args.txid !== "string") {
                 throw new Error("txid must be a string");
             }
+            if (args.include_trac !== undefined && typeof args.include_trac !== "boolean") {
+                throw new Error("include_trac must be a boolean");
+            }
+            if (args.trac_rest_base !== undefined && typeof args.trac_rest_base !== "string") {
+                throw new Error("trac_rest_base must be a string");
+            }
             const result = await verifyInscription({
                 memory: args.memory,
                 inscription_id: args.inscription_id,
                 txid: args.txid,
                 sha256: args.sha256,
                 fetch_content: args.fetch_content,
+                include_trac: args.include_trac,
+                trac_rest_base: args.trac_rest_base,
             });
             return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
         }
@@ -325,7 +550,13 @@ async function main() {
     const transport = new StdioServerTransport();
     await server.connect(transport);
 }
-main().catch((error) => {
-    console.error(error instanceof Error ? error.message : error);
-    process.exitCode = 1;
-});
+const isDirectRun = process.argv[1] &&
+    (process.argv[1].endsWith("/index.js") ||
+        process.argv[1].endsWith("/index.ts") ||
+        process.argv[1].endsWith("dmt-receipts-mcp"));
+if (isDirectRun) {
+    main().catch((error) => {
+        console.error(error instanceof Error ? error.message : error);
+        process.exitCode = 1;
+    });
+}

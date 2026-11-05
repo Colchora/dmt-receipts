@@ -1,4 +1,17 @@
 #!/usr/bin/env node
+export type TracLookupResult = {
+    ok: boolean;
+    source?: string;
+    deployment_tap?: unknown;
+    dmt_mint_holder?: unknown;
+    transfer_amount?: unknown;
+    accumulator?: unknown;
+    error?: string;
+};
+export declare function fetchTracMetadata(args: {
+    inscription_id: string;
+    trac_rest_base?: string;
+}): Promise<TracLookupResult>;
 export type MemoryV1 = {
     agent_id: string;
     key: string;
@@ -37,6 +50,8 @@ export declare function verifyInscription(args: {
     txid?: string;
     sha256?: string;
     fetch_content?: boolean;
+    include_trac?: boolean;
+    trac_rest_base?: string;
 }): Promise<{
     ok: boolean;
     sha256: string;
@@ -51,4 +66,5 @@ export declare function verifyInscription(args: {
     };
     explorer_links: string[];
     note: string;
+    trac?: TracLookupResult;
 }>;
