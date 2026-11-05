@@ -22,3 +22,6 @@ Build log: Bitcoin-permanent memory receipts for agents (canonical JSON + TAP/Or
 - Store memory + inscription id / txid; verify via explorers
 
 Site: https://misty-flame-3nw3.here.now/
+
+
+Optional Support + Tap buyback (honor-system); all proceeds → Buyback tab on the live site.

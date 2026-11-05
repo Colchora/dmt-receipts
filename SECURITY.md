@@ -17,3 +17,7 @@
 ## Reporting a vulnerability
 
 Use GitHub's private vulnerability reporting for this repository if it is enabled. If private reporting is unavailable, contact the maintainers through a verified project channel before filing a public issue. Share a minimal reproduction and avoid including private memory content, secrets, or personal data.
+
+## Support payments
+
+Honor-system Support / Tap buyback contributions are handled on the static site Buyback tab. Treat published payment addresses carefully; confirm them from the live Buyback page before sending funds. The MCP server never accepts or routes payments.

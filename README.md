@@ -78,3 +78,13 @@ Inscription content is public on Bitcoin. Do not inscribe secrets. This tool nev
 ## License
 
 MIT
+
+
+## Support & Tap buyback
+
+Optional honor-system funding lives on the live site:
+
+- [Support plans](https://misty-flame-3nw3.here.now/#support) — Free prepare, Support, Tap buyback
+- [Buyback hub](https://misty-flame-3nw3.here.now/#buyback) — **all contribution proceeds** are directed here (USDC address + local payment-reference log)
+
+Prepare/inscribe memory tooling stays free aside from Bitcoin network inscription fees paid to miners/inscribers. This repository does not process card payments.
