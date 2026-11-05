@@ -1,16 +1,16 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.many77146-bot/dmt-receipts",
+  "name": "io.github.Colchora/dmt-receipts",
   "description": "Stamp and verify Bitcoin-anchored OpenTimestamps memory receipts for AI agents.",
   "repository": {
-    "url": "https://github.com/many77146-bot/dmt-receipts",
+    "url": "https://github.com/Colchora/dmt-receipts",
     "source": "github"
   },
   "version": "0.1.0",
   "packages": [
     {
       "registryType": "mcpb",
-      "identifier": "https://github.com/many77146-bot/dmt-receipts/releases/download/v0.1.0/dmt-receipts-0.1.0.mcpb",
+      "identifier": "https://github.com/Colchora/dmt-receipts/releases/download/v0.1.0/dmt-receipts-0.1.0.mcpb",
       "fileSha256": "58a57206daac47b2bfb905c835c1987d3a35f87ebbe18de3fff9d598ebd2f4c7",
       "transport": {
         "type": "stdio"

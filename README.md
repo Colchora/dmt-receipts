@@ -8,7 +8,7 @@ DMT Receipts turns a canonical `dmt-memory/v1` JSON object into a SHA-256 digest
 
 [![MIT license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE) [![Node.js 18+](https://img.shields.io/badge/Node.js-18%2B-339933.svg)](https://nodejs.org/)
 
-Maintainer: [github.com/many77146-bot](https://github.com/many77146-bot)
+Maintainer: [github.com/Colchora](https://github.com/Colchora)
 
 
 ## What a receipt does—and does not—establish

@@ -36,7 +36,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/many77146-bot/dmt-receipts.git"
+    "url": "https://github.com/Colchora/dmt-receipts.git"
   },
   "engines": {
     "node": ">=18"
@@ -49,10 +49,10 @@
     "tsx": "^4.19.0",
     "typescript": "^5.7.0"
   },
-  "mcpName": "io.github.many77146-bot/dmt-receipts",
+  "mcpName": "io.github.Colchora/dmt-receipts",
   "homepage": "https://misty-flame-3nw3.here.now/",
   "bugs": {
-    "url": "https://github.com/many77146-bot/dmt-receipts/issues"
+    "url": "https://github.com/Colchora/dmt-receipts/issues"
   },
   "publishConfig": {
     "access": "public"
