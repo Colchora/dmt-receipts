@@ -1,0 +1,6 @@
+{
+  "agent_id": "demo-agent",
+  "key": "prefs/style",
+  "content": "User prefers concise diffs and UTC-5 timestamps.",
+  "tags": ["preferences", "ui"]
+}
