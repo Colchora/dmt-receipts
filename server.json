@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.Colchora/dmt-receipts",
-  "description": "Prepare TAP/Ordinals inscription payloads for AI agent memories and verify inscription content on Bitcoin.",
+  "description": "Prepare and verify TAP/Ordinals payloads for AI agent memories on Bitcoin.",
   "repository": {
     "url": "https://github.com/Colchora/dmt-receipts",
     "source": "github"
@@ -10,8 +10,8 @@
   "packages": [
     {
       "registryType": "mcpb",
-      "identifier": "https://github.com/Colchora/dmt-receipts/releases/download/v0.1.0/dmt-receipts-0.1.0.mcpb",
-      "fileSha256": "58a57206daac47b2bfb905c835c1987d3a35f87ebbe18de3fff9d598ebd2f4c7",
+      "identifier": "https://github.com/Colchora/dmt-receipts/releases/download/v0.2.0/dmt-receipts-0.2.0.mcpb",
+      "fileSha256": "8cfc6588cbc726ea785214275dd1873aede64199c3b1ab24168eb81aac5abaaf",
       "transport": {
         "type": "stdio"
       }
