@@ -1,5 +1,17 @@
 # Contributing
 
-Keep changes focused and aligned with the published protocol at https://misty-flame-3nw3.here.now/llms.txt. Preserve canonical sorted-key UTF-8 JSON, raw-digest `POST /digest` requests, honest verification scope, and both existing MCP tool names.
+Keep changes focused and aligned with the published protocol:
 
-With Node.js 18 or later, install dependencies and run `npm run build` before submitting changes. Include or update tests when behavior changes, and never include private memory content, credentials, or generated `node_modules` in a contribution.
+- https://misty-flame-3nw3.here.now/spec.md
+- https://misty-flame-3nw3.here.now/llms.txt
+
+Preserve canonical sorted-key UTF-8 JSON (Unicode code point order, compact separators, no trailing newline), honest verification scope, and both MCP tool names: `prepare_memory` and `verify_inscription`. Permanence is the inscribed bytes, not a calendar digest.
+
+With Node.js 18 or later:
+
+```sh
+npm ci
+npm test
+```
+
+`npm test` rebuilds `dist/` and runs the unit tests. Include or update tests when behavior changes. Never include private memory content, credentials, or generated `node_modules` in a contribution.

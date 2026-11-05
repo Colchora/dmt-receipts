@@ -1,6 +1,8 @@
 # Example: prepare, then verify
 
-This walkthrough uses [`stamp-example.json`](./stamp-example.json) as input to the MCP `prepare_memory` tool.
+The same walkthrough runs in the browser with no install: [Anchor](https://misty-flame-3nw3.here.now/#anchor) to prepare, then [Verify](https://misty-flame-3nw3.here.now/#verify). Agents can follow [llms.txt](https://misty-flame-3nw3.here.now/llms.txt) or the [spec](https://misty-flame-3nw3.here.now/spec.md).
+
+This walkthrough uses [`stamp-example.json`](./stamp-example.json) as input to the MCP `prepare_memory` tool. Paste those fields into the live Anchor form, or call the tool.
 
 ## 1. Prepare a memory
 

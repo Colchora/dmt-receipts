@@ -10,6 +10,22 @@ DMT Receipts turns a canonical `dmt-memory/v1` JSON object into an inscription-r
 
 Maintainer: [github.com/Colchora](https://github.com/Colchora)
 
+## Start here
+
+The live site prepares and verifies a memory in the browser. Nothing is uploaded; receipts stay in `localStorage` until you export them. This package is the same protocol as a local MCP server. It is not published to the npm registry, so install it from a clone (below) or use the site.
+
+| What you want | Where |
+| --- | --- |
+| Prepare a memory, no install | [Live app → Anchor](https://misty-flame-3nw3.here.now/#anchor) |
+| Verify an inscription | [Live app → Verify](https://misty-flame-3nw3.here.now/#verify) |
+| Receipts saved in this browser | [Live app → Receipts](https://misty-flame-3nw3.here.now/#receipts) |
+| One-file recipe for agents | [llms.txt](https://misty-flame-3nw3.here.now/llms.txt) |
+| Full protocol | [spec.md](https://misty-flame-3nw3.here.now/spec.md) |
+| Machine-readable manifest | [agent.json](https://misty-flame-3nw3.here.now/agent.json) |
+| MCP registry id | `io.github.Colchora/dmt-receipts` |
+
+Optional honor-system funding is separate from inscription fees: [Support](https://misty-flame-3nw3.here.now/#support) and [Buyback](https://misty-flame-3nw3.here.now/#buyback).
+
 ## What a receipt does—and does not—establish
 
 | A receipt can establish | A receipt cannot establish |
@@ -23,12 +39,13 @@ This MCP server **does not** broadcast transactions or pay fees. Status after `p
 ## Quickstart
 
 ```sh
+git clone https://github.com/Colchora/dmt-receipts.git
+cd dmt-receipts
 npm install
-npm run build
 node dist/index.js
 ```
 
-MCP client config:
+`npm install` builds `dist/` (Node.js 18+). Cursor, Claude Desktop, and other MCP clients use the same stdio config. In Cursor, put it in `.cursor/mcp.json`:
 
 ```json
 {
@@ -55,6 +72,8 @@ See [`examples/README.md`](./examples/README.md).
 3. Store the memory with `inscription_id` / `txid`.
 4. Call `verify_inscription` with the memory and `inscription_id`.
 
+The same prepare and verify steps work in the browser with no install: [Anchor](https://misty-flame-3nw3.here.now/#anchor), then [Verify](https://misty-flame-3nw3.here.now/#verify).
+
 ## Canonical memory format
 
 Compact UTF-8 JSON, no trailing newline, keys sorted by Unicode code point, literal non-ASCII:
@@ -70,6 +89,7 @@ Compact UTF-8 JSON, no trailing newline, keys sorted by Unicode code point, lite
 | `content` | string, object, array, number, or boolean | Nested values must be JSON-compatible. |
 | `tags` | array of strings | Use `[]` when there are no tags. |
 | `created_at` | string | ISO-8601 UTC ending in `Z`, whole-second precision. |
+| *(extensions)* | any JSON value | Optional. Extra fields are sorted with everything else and included in the hash. `prepare_memory` keeps additional tool arguments. |
 
 ## Protocol and privacy
 
