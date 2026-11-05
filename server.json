@@ -1,5 +1,5 @@
 {
-  "": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.many77146-bot/dmt-receipts",
   "description": "Stamp and verify Bitcoin-anchored OpenTimestamps memory receipts for AI agents.",
   "repository": {
