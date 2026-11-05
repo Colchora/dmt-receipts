@@ -1,6 +1,6 @@
 # DMT Receipts — Draft posts (DO NOT POST)
 
-Saved for Yorgi to paste. Cultura will not post these.
+Saved for you to paste. Cultura will not post these.
 
 Site: https://misty-flame-3nw3.here.now/
 Recipe: https://misty-flame-3nw3.here.now/llms.txt
@@ -111,5 +111,5 @@ If you’ve built agent memory layers — would you want this as a tiny library,
 | llmstxt.site | Not found yet |
 
 ## Highest leverage today
-- Yorgi: paste & submit the Show HN draft (needs your HN account).
+- Paste & submit the Show HN draft (needs your HN account).
 - Cultura without you: keep watching the other two directories, draft an llms.txt link-quality fix for the 0/25 score, prep reply drafts if threads get comments — without posting.
