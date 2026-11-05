@@ -16,6 +16,7 @@ const MEMPOOL_TX = (txid) => `https://mempool.space/tx/${encodeURIComponent(txid
 const FETCH_TIMEOUT_MS = 15_000;
 const TRAC_WS_URL = "https://tap.trac.network";
 const TRAC_TIMEOUT_MS = 8_000;
+const PREPARE_KNOWN_FIELDS = new Set(["agent_id", "key", "content", "tags", "created_at"]);
 function normalizeTracRestBase(raw) {
     const value = (raw || "").trim();
     if (!value)
@@ -45,11 +46,11 @@ function unwrapTracPayload(msg) {
 async function tracRestGet(base, func, args = []) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), TRAC_TIMEOUT_MS);
+    timer.unref();
     try {
-        const path = base +
-            "/" +
-            func +
-            (args.length ? "/" + args.map((x) => encodeURIComponent(String(x))).join("/") : "");
+        const path = args.length === 0
+            ? `${base}/${func}`
+            : `${base}/${func}/${args.map((part) => encodeURIComponent(String(part))).join("/")}`;
         const response = await fetch(path, {
             signal: controller.signal,
             headers: { Accept: "application/json" },
@@ -71,35 +72,44 @@ async function tracRestGet(base, func, args = []) {
         clearTimeout(timer);
     }
 }
-async function tracSocketGet(func, args = []) {
-    let io;
+async function tracSocketGetMany(calls) {
+    if (calls.length === 0)
+        return [];
+    let ioFactory;
     try {
-        ({ io } = await import("socket.io-client"));
+        ({ io: ioFactory } = await import("socket.io-client"));
     }
     catch (error) {
-        return {
-            ok: false,
-            error: error instanceof Error
-                ? `socket.io-client unavailable: ${error.message}`
-                : "socket.io-client unavailable",
-            source: "public WS",
-        };
+        const message = error instanceof Error
+            ? `socket.io-client unavailable: ${error.message}`
+            : "socket.io-client unavailable";
+        return calls.map(() => ({ ok: false, error: message, source: "public WS" }));
     }
-    return await new Promise((resolve) => {
-        let done = false;
-        const call_id = `dmt-mcp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-        const socket = io(TRAC_WS_URL, {
+    return new Promise((resolve) => {
+        const results = new Array(calls.length);
+        let remaining = calls.length;
+        let settled = false;
+        const nonce = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+        const callIds = calls.map((_, index) => `dmt-mcp-${nonce}-${index.toString(36)}`);
+        const indexById = new Map();
+        for (let i = 0; i < callIds.length; i += 1)
+            indexById.set(callIds[i], i);
+        const socket = ioFactory(TRAC_WS_URL, {
             autoConnect: false,
             reconnection: false,
             timeout: TRAC_TIMEOUT_MS,
             forceNew: true,
             transports: ["websocket"],
         });
-        const finish = (value) => {
-            if (done)
-                return;
-            done = true;
-            clearTimeout(timer);
+        const timer = setTimeout(() => {
+            for (let i = 0; i < calls.length; i += 1) {
+                if (!results[i]) {
+                    finishOne(i, { ok: false, error: `Lookup timed out after ${TRAC_TIMEOUT_MS} ms` });
+                }
+            }
+        }, TRAC_TIMEOUT_MS);
+        timer.unref();
+        const closeSocket = () => {
             socket.removeAllListeners();
             try {
                 socket.close();
@@ -112,51 +122,127 @@ async function tracSocketGet(func, args = []) {
                     /* ignore */
                 }
             }
-            resolve({ ...value, source: "public WS" });
         };
-        const onResponse = (msg) => {
+        const finishAll = () => {
+            if (settled)
+                return;
+            settled = true;
+            clearTimeout(timer);
+            closeSocket();
+            resolve(results.map((result) => result ?? { ok: false, error: "Connection closed", source: "public WS" }));
+        };
+        const finishOne = (index, value) => {
+            if (results[index])
+                return;
+            results[index] = { ...value, source: "public WS" };
+            remaining -= 1;
+            if (remaining === 0)
+                finishAll();
+        };
+        const failOpen = (message) => {
+            for (let i = 0; i < calls.length; i += 1)
+                finishOne(i, { ok: false, error: message });
+        };
+        socket.on("response", (msg) => {
             if (!msg || typeof msg !== "object")
                 return;
             const record = msg;
-            if (record.call_id !== call_id)
+            if (typeof record.call_id !== "string")
+                return;
+            const index = indexById.get(record.call_id);
+            if (index === undefined)
                 return;
             try {
                 if (!Object.prototype.hasOwnProperty.call(record, "result")) {
                     throw new Error(typeof record.error === "string" ? record.error : "Malformed Trac response");
                 }
-                finish({ ok: true, result: unwrapTracPayload(msg) });
+                finishOne(index, { ok: true, result: unwrapTracPayload(msg) });
             }
             catch (error) {
-                finish({
+                finishOne(index, {
                     ok: false,
                     error: error instanceof Error ? error.message : String(error),
                 });
             }
-        };
-        const onError = (err) => finish({ ok: false, error: err?.message || "Connection failed" });
-        const onDisconnect = () => finish({ ok: false, error: "Connection closed" });
-        const timer = setTimeout(() => finish({ ok: false, error: `Lookup timed out after ${TRAC_TIMEOUT_MS} ms` }), TRAC_TIMEOUT_MS);
+        });
+        socket.on("connect_error", (err) => {
+            failOpen(err?.message || "Connection failed");
+        });
+        socket.on("disconnect", () => {
+            for (let i = 0; i < calls.length; i += 1) {
+                if (!results[i])
+                    finishOne(i, { ok: false, error: "Connection closed" });
+            }
+        });
+        socket.on("connect", () => {
+            try {
+                for (let i = 0; i < calls.length; i += 1) {
+                    socket.emit("get", {
+                        func: calls[i].func,
+                        args: calls[i].args,
+                        call_id: callIds[i],
+                    });
+                }
+            }
+            catch (error) {
+                failOpen(error instanceof Error ? error.message : String(error));
+            }
+        });
         try {
-            socket.on("response", onResponse);
-            socket.on("connect_error", onError);
-            socket.on("disconnect", onDisconnect);
-            socket.emit("get", { func, args, call_id });
-            if (!socket.connected)
-                socket.connect();
+            socket.connect();
         }
         catch (error) {
-            finish({
-                ok: false,
-                error: error instanceof Error ? error.message : String(error),
-            });
+            failOpen(error instanceof Error ? error.message : String(error));
         }
     });
 }
-async function tracLookup(restBase, restFunc, wsFunc, args) {
-    // REST base set → REST only (self-hosted). Else public Socket.IO.
-    if (restBase)
-        return tracRestGet(restBase, restFunc, args);
-    return tracSocketGet(wsFunc, args);
+function tracQueries(inscriptionId) {
+    return [
+        { key: "deployment_tap", restFunc: "getDeployment", wsFunc: "deployment", callArgs: ["tap"] },
+        {
+            key: "dmt_mint_holder",
+            restFunc: "getDmtMintHolder",
+            wsFunc: "dmtMintHolder",
+            callArgs: [inscriptionId],
+        },
+        {
+            key: "transfer_amount",
+            restFunc: "getTransferAmountByInscription",
+            wsFunc: "transferAmountByInscription",
+            callArgs: [inscriptionId],
+        },
+        {
+            key: "accumulator",
+            restFunc: "getAccumulator",
+            wsFunc: "accumulator",
+            callArgs: [inscriptionId],
+        },
+    ];
+}
+function tracResultFromOutcomes(queries, outcomes) {
+    const out = { ok: false };
+    const errors = [];
+    for (let i = 0; i < queries.length; i += 1) {
+        const query = queries[i];
+        const result = outcomes[i];
+        if (result.ok) {
+            out.ok = true;
+            out.source = out.source || result.source;
+            out[query.key] = result.result;
+        }
+        else if (result.error) {
+            errors.push(`${query.key}: ${result.error}`);
+        }
+    }
+    if (!out.ok) {
+        out.error =
+            errors.join("; ") ||
+                "Trac index unreachable (public endpoint may be down; set DMT_TRAC_REST / trac_rest_base for self-hosted tap-reader)";
+    }
+    else if (errors.length) {
+        out.error = `Partial Trac results; some lookups failed: ${errors.join("; ")}`;
+    }
+    return out;
 }
 export async function fetchTracMetadata(args) {
     let restBase = "";
@@ -169,43 +255,14 @@ export async function fetchTracMetadata(args) {
             error: error instanceof Error ? error.message : String(error),
         };
     }
+    const queries = tracQueries(args.inscription_id);
     try {
-        const queries = [
-            ["deployment_tap", "getDeployment", "deployment", ["tap"]],
-            ["dmt_mint_holder", "getDmtMintHolder", "dmtMintHolder", [args.inscription_id]],
-            [
-                "transfer_amount",
-                "getTransferAmountByInscription",
-                "transferAmountByInscription",
-                [args.inscription_id],
-            ],
-            ["accumulator", "getAccumulator", "accumulator", [args.inscription_id]],
-        ];
-        const settled = await Promise.all(queries.map(async ([key, restFunc, wsFunc, callArgs]) => {
-            const result = await tracLookup(restBase, restFunc, wsFunc, callArgs);
-            return [key, result];
-        }));
-        const out = { ok: false };
-        const errors = [];
-        for (const [key, result] of settled) {
-            if (result.ok) {
-                out.ok = true;
-                out.source = out.source || result.source;
-                out[key] = result.result;
-            }
-            else if (result.error) {
-                errors.push(`${key}: ${result.error}`);
-            }
-        }
-        if (!out.ok) {
-            out.error =
-                errors.join("; ") ||
-                    "Trac index unreachable (public endpoint may be down; set DMT_TRAC_REST / trac_rest_base for self-hosted tap-reader)";
-        }
-        else if (errors.length) {
-            out.error = `Partial Trac results; some lookups failed: ${errors.join("; ")}`;
-        }
-        return out;
+        // Public Trac is one Socket.IO session. Opening a connection per lookup
+        // repeated the handshake four times on every verify.
+        const outcomes = restBase
+            ? await Promise.all(queries.map((query) => tracRestGet(restBase, query.restFunc, query.callArgs)))
+            : await tracSocketGetMany(queries.map((query) => ({ func: query.wsFunc, args: query.callArgs })));
+        return tracResultFromOutcomes(queries, outcomes);
     }
     catch (error) {
         return {
@@ -214,58 +271,103 @@ export async function fetchTracMetadata(args) {
         };
     }
 }
-function compareCodePoints(left, right) {
-    const a = Array.from(left, (char) => char.codePointAt(0));
-    const b = Array.from(right, (char) => char.codePointAt(0));
-    const length = Math.min(a.length, b.length);
-    for (let i = 0; i < length; i += 1) {
-        if (a[i] !== b[i])
-            return a[i] - b[i];
+function pathOf(segments) {
+    let path = "memory";
+    for (let i = 0; i < segments.length; i += 1) {
+        const segment = segments[i];
+        path += typeof segment === "number" ? `[${segment}]` : `.${segment}`;
     }
-    return a.length - b.length;
+    return path;
 }
-function stringifyPrimitive(value) {
-    const encoded = JSON.stringify(value);
-    if (encoded === undefined)
-        throw new Error("Value cannot be represented in JSON");
-    return encoded;
+function compareCodePointsFrom(left, right, start) {
+    let i = start;
+    let j = start;
+    while (i < left.length && j < right.length) {
+        const a = left.codePointAt(i);
+        const b = right.codePointAt(j);
+        if (a !== b)
+            return a - b;
+        i += a > 0xffff ? 2 : 1;
+        j += b > 0xffff ? 2 : 1;
+    }
+    if (i >= left.length && j >= right.length)
+        return 0;
+    return i >= left.length ? -1 : 1;
 }
-function canonicalJson(value, path = "memory") {
+function compareCodePoints(left, right) {
+    if (left === right)
+        return 0;
+    const limit = left.length < right.length ? left.length : right.length;
+    for (let i = 0; i < limit; i += 1) {
+        const a = left.charCodeAt(i);
+        const b = right.charCodeAt(i);
+        if (a === b && a < 0xd800)
+            continue;
+        if ((a >= 0xd800 && a <= 0xdfff) || (b >= 0xd800 && b <= 0xdfff)) {
+            return compareCodePointsFrom(left, right, i);
+        }
+        if (a !== b)
+            return a - b;
+    }
+    return left.length - right.length;
+}
+function writeCanonical(value, segments) {
     if (value === null)
         return "null";
-    if (typeof value === "string" || typeof value === "boolean") {
-        return stringifyPrimitive(value);
+    const valueType = typeof value;
+    if (valueType === "string" || valueType === "boolean") {
+        return JSON.stringify(value);
     }
-    if (typeof value === "number") {
+    if (valueType === "number") {
         if (!Number.isFinite(value)) {
-            throw new Error(`${path} must not contain a non-finite number`);
+            throw new Error(`${pathOf(segments)} must not contain a non-finite number`);
         }
-        return stringifyPrimitive(value);
+        return JSON.stringify(value);
     }
     if (Array.isArray(value)) {
-        const items = Array.from(value, (item, index) => canonicalJson(item, `${path}[${index}]`));
+        const items = new Array(value.length);
+        for (let i = 0; i < value.length; i += 1) {
+            segments.push(i);
+            items[i] = writeCanonical(value[i], segments);
+            segments.pop();
+        }
         return `[${items.join(",")}]`;
     }
-    if (typeof value === "object") {
+    if (valueType === "object") {
         const prototype = Object.getPrototypeOf(value);
         if (prototype !== Object.prototype && prototype !== null) {
-            throw new Error(`${path} must contain only JSON-compatible objects`);
+            throw new Error(`${pathOf(segments)} must contain only JSON-compatible objects`);
         }
-        const entries = Object.keys(value).sort(compareCodePoints);
-        const serialized = entries.map((key) => {
-            const encodedKey = stringifyPrimitive(key);
-            const encodedValue = canonicalJson(value[key], `${path}.${key}`);
-            return `${encodedKey}:${encodedValue}`;
-        });
-        return `{${serialized.join(",")}}`;
+        const record = value;
+        const keys = Object.keys(record).sort(compareCodePoints);
+        const parts = new Array(keys.length);
+        for (let i = 0; i < keys.length; i += 1) {
+            const key = keys[i];
+            segments.push(key);
+            const encodedValue = writeCanonical(record[key], segments);
+            segments.pop();
+            parts[i] = `${JSON.stringify(key)}:${encodedValue}`;
+        }
+        return `{${parts.join(",")}}`;
     }
-    throw new Error(`${path} contains a value that cannot be represented in JSON`);
+    throw new Error(`${pathOf(segments)} contains a value that cannot be represented in JSON`);
+}
+function canonicalJson(value) {
+    return writeCanonical(value, []);
 }
 export function canonicalBytes(memory) {
     return Buffer.from(canonicalJson(memory), "utf8");
 }
 export function sha256(bytes) {
     return createHash("sha256").update(bytes).digest();
+}
+function sha256Hex(data) {
+    const hash = createHash("sha256");
+    if (typeof data === "string")
+        hash.update(data, "utf8");
+    else
+        hash.update(data);
+    return hash.digest("hex");
 }
 function utcNowIso() {
     return new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -298,7 +400,31 @@ function assertMemory(value) {
     if (typeof memory.created_at !== "string" || !isUtcTimestamp(memory.created_at)) {
         throw new Error("memory.created_at must be a valid ISO-8601 UTC timestamp ending in Z");
     }
-    canonicalJson(memory);
+}
+function assignExtensions(memory, extensions) {
+    if (!extensions)
+        return;
+    for (const key of Object.keys(extensions)) {
+        if (PREPARE_KNOWN_FIELDS.has(key))
+            continue;
+        Object.defineProperty(memory, key, {
+            value: extensions[key],
+            enumerable: true,
+            writable: true,
+            configurable: true,
+        });
+    }
+}
+function extensionFields(args) {
+    let extensions;
+    for (const key of Object.keys(args)) {
+        if (PREPARE_KNOWN_FIELDS.has(key))
+            continue;
+        if (!extensions)
+            extensions = {};
+        extensions[key] = args[key];
+    }
+    return extensions;
 }
 export function prepareMemory(args) {
     const memory = {
@@ -308,17 +434,16 @@ export function prepareMemory(args) {
         key: args.key,
         tags: args.tags ?? [],
     };
+    assignExtensions(memory, args.extensions);
     assertMemory(memory);
-    const canonicalBuf = canonicalBytes(memory);
-    const digest = sha256(canonicalBuf);
-    const hex = digest.toString("hex");
-    const canonical = canonicalBuf.toString("utf8");
+    const canonical = canonicalJson(memory);
+    const hex = sha256Hex(canonical);
     const dta = `sha256:${hex}`.slice(0, 512);
     return {
         memory,
         canonical,
         sha256: hex,
-        byte_length: canonicalBuf.length,
+        byte_length: Buffer.byteLength(canonical, "utf8"),
         status: "prepared",
         inscription_recipe: {
             content_type: "application/json",
@@ -339,11 +464,43 @@ export function prepareMemory(args) {
         },
     };
 }
+function emptyContentFetch() {
+    return {
+        attempted: false,
+        ok: false,
+        matches_canonical: false,
+    };
+}
+async function fetchInscriptionContent(inscriptionId, canonical, hex) {
+    const contentFetch = emptyContentFetch();
+    contentFetch.attempted = true;
+    try {
+        const response = await fetch(ORD_CONTENT(inscriptionId), {
+            signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        });
+        if (!response.ok) {
+            contentFetch.error = `HTTP ${response.status}`;
+        }
+        else {
+            const remote = Buffer.from(await response.arrayBuffer());
+            contentFetch.ok = true;
+            contentFetch.remote_sha256 = sha256Hex(remote);
+            contentFetch.matches_canonical =
+                remote.equals(Buffer.from(canonical, "utf8")) || contentFetch.remote_sha256 === hex;
+        }
+    }
+    catch (error) {
+        contentFetch.error = error instanceof Error ? error.message : String(error);
+    }
+    return contentFetch;
+}
 export async function verifyInscription(args) {
+    if (args.fetch_content !== undefined && typeof args.fetch_content !== "boolean") {
+        throw new Error("fetch_content must be a boolean");
+    }
     assertMemory(args.memory);
-    const canonicalBuf = canonicalBytes(args.memory);
-    const digest = sha256(canonicalBuf);
-    const hex = digest.toString("hex");
+    const canonical = canonicalJson(args.memory);
+    const hex = sha256Hex(canonical);
     const hexOk = !args.sha256 || args.sha256.toLowerCase() === hex;
     const links = [];
     if (args.inscription_id) {
@@ -352,35 +509,18 @@ export async function verifyInscription(args) {
     }
     if (args.txid)
         links.push(MEMPOOL_TX(args.txid));
-    const contentFetch = {
-        attempted: false,
-        ok: false,
-        matches_canonical: false,
-        remote_sha256: undefined,
-        error: undefined,
-    };
     const shouldFetch = args.fetch_content !== false && Boolean(args.inscription_id);
-    if (shouldFetch && args.inscription_id) {
-        contentFetch.attempted = true;
-        try {
-            const response = await fetch(ORD_CONTENT(args.inscription_id), {
-                signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-            });
-            if (!response.ok) {
-                contentFetch.error = `HTTP ${response.status}`;
-            }
-            else {
-                const remote = Buffer.from(await response.arrayBuffer());
-                contentFetch.ok = true;
-                contentFetch.remote_sha256 = sha256(remote).toString("hex");
-                contentFetch.matches_canonical =
-                    remote.equals(canonicalBuf) || contentFetch.remote_sha256 === hex;
-            }
-        }
-        catch (error) {
-            contentFetch.error = error instanceof Error ? error.message : String(error);
-        }
-    }
+    const includeTrac = args.include_trac !== false && Boolean(args.inscription_id);
+    const contentFetchPromise = shouldFetch && args.inscription_id
+        ? fetchInscriptionContent(args.inscription_id, canonical, hex)
+        : Promise.resolve(emptyContentFetch());
+    const tracPromise = includeTrac
+        ? fetchTracMetadata({
+            inscription_id: args.inscription_id,
+            trac_rest_base: args.trac_rest_base,
+        })
+        : Promise.resolve(undefined);
+    const [contentFetch, trac] = await Promise.all([contentFetchPromise, tracPromise]);
     const ok = hexOk &&
         (!contentFetch.attempted || contentFetch.matches_canonical) &&
         Boolean(args.inscription_id || args.txid || contentFetch.matches_canonical);
@@ -401,18 +541,10 @@ export async function verifyInscription(args) {
         note =
             "Prepared local digest is consistent. On-chain permanence requires a confirmed Ordinals inscription whose content equals the canonical UTF-8 JSON.";
     }
-    let trac;
-    const includeTrac = args.include_trac !== false;
-    if (includeTrac && args.inscription_id) {
-        trac = await fetchTracMetadata({
-            inscription_id: args.inscription_id,
-            trac_rest_base: args.trac_rest_base,
-        });
-    }
     return {
         ok: Boolean(ok && hexOk && (contentFetch.matches_canonical || !contentFetch.attempted)),
         sha256: hex,
-        byte_length: canonicalBuf.length,
+        byte_length: Buffer.byteLength(canonical, "utf8"),
         matches_expected_sha256: hexOk,
         content_fetch: contentFetch,
         explorer_links: links,
@@ -420,73 +552,69 @@ export async function verifyInscription(args) {
         ...(trac ? { trac } : {}),
     };
 }
-const server = new Server({ name: "dmt-receipts", version: "0.2.0" }, { capabilities: { tools: {} } });
-server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: [
-        {
-            name: "prepare_memory",
-            description: "Canonicalize a dmt-memory/v1 JSON memory, SHA-256 it, and return an Ordinals/TAP inscription recipe (content UTF-8 + optional dta pointer). Does not broadcast a Bitcoin transaction or pay fees. Permanence requires inscribing the content on Bitcoin L1 via TAP Wallet or any Ordinals/TAP tool.",
-            inputSchema: {
-                type: "object",
-                properties: {
-                    agent_id: { type: "string", description: "Stable agent identifier" },
-                    key: { type: "string", description: "Memory key / slug / path" },
-                    content: {
-                        description: "Memory payload (string, object, array, number, or boolean)",
-                    },
-                    tags: {
-                        type: "array",
-                        items: { type: "string" },
-                        description: "Optional string tags; defaults to []",
-                    },
-                    created_at: {
-                        type: "string",
-                        description: "Optional ISO-8601 UTC timestamp ending in Z; defaults to now",
-                    },
+const TOOLS = [
+    {
+        name: "prepare_memory",
+        description: "Canonicalize a dmt-memory/v1 JSON memory, SHA-256 it, and return an Ordinals/TAP inscription recipe (content UTF-8 + optional dta pointer). Additional properties are extension fields: they are kept, sorted, and included in the hash. Does not broadcast a Bitcoin transaction or pay fees. Permanence requires inscribing the content on Bitcoin L1 via TAP Wallet or any Ordinals/TAP tool. Browser UI: https://misty-flame-3nw3.here.now/#anchor",
+        inputSchema: {
+            type: "object",
+            properties: {
+                agent_id: { type: "string", description: "Stable agent identifier" },
+                key: { type: "string", description: "Memory key / slug / path" },
+                content: {
+                    description: "Memory payload (string, object, array, number, or boolean)",
                 },
-                required: ["agent_id", "key", "content"],
-            },
-        },
-        {
-            name: "verify_inscription",
-            description: "Recompute the canonical SHA-256 of a dmt-memory/v1 object and, when inscription_id is provided, attempt to fetch Ordinals content and compare bytes. Optionally enrich with soft-fail Trac Network TAP/DMT index metadata (deployment, mint holder, transfer amount, accumulator). Returns explorer links plus a trac object. Does not use calendar digest proofs.",
-            inputSchema: {
-                type: "object",
-                properties: {
-                    memory: {
-                        type: "object",
-                        description: "Full dmt-memory/v1 object (agent_id, key, content, tags, created_at)",
-                    },
-                    inscription_id: {
-                        type: "string",
-                        description: "Bitcoin Ordinals inscription id (txid + 'i' + index)",
-                    },
-                    txid: { type: "string", description: "Optional Bitcoin transaction id" },
-                    sha256: {
-                        type: "string",
-                        description: "Optional expected hex digest to cross-check",
-                    },
-                    fetch_content: {
-                        type: "boolean",
-                        description: "Fetch inscription content from ordinals.com when inscription_id is set (default true)",
-                    },
-                    include_trac: {
-                        type: "boolean",
-                        description: "When inscription_id is set, query Trac TAP/DMT index metadata (default true). Soft-fails if Trac is down.",
-                    },
-                    trac_rest_base: {
-                        type: "string",
-                        description: "Optional self-hosted tap-reader REST origin. Falls back to env DMT_TRAC_REST, then public Socket.IO at tap.trac.network.",
-                    },
+                tags: {
+                    type: "array",
+                    items: { type: "string" },
+                    description: "Optional string tags; defaults to []",
                 },
-                required: ["memory"],
+                created_at: {
+                    type: "string",
+                    description: "Optional ISO-8601 UTC timestamp ending in Z; defaults to now",
+                },
             },
+            required: ["agent_id", "key", "content"],
         },
-    ],
-}));
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const { name, arguments: rawArgs } = request.params;
-    const args = (rawArgs ?? {});
+    },
+    {
+        name: "verify_inscription",
+        description: "Recompute the canonical SHA-256 of a dmt-memory/v1 object and, when inscription_id is provided, attempt to fetch Ordinals content and compare bytes. Extension fields on memory are included in the hash. Optionally enrich with soft-fail Trac Network TAP/DMT index metadata (deployment, mint holder, transfer amount, accumulator). Returns explorer links plus a trac object. Does not use calendar digest proofs. Browser UI: https://misty-flame-3nw3.here.now/#verify",
+        inputSchema: {
+            type: "object",
+            properties: {
+                memory: {
+                    type: "object",
+                    description: "Full dmt-memory/v1 object (agent_id, key, content, tags, created_at). Optional extension fields are hashed.",
+                },
+                inscription_id: {
+                    type: "string",
+                    description: "Bitcoin Ordinals inscription id (txid + 'i' + index)",
+                },
+                txid: { type: "string", description: "Optional Bitcoin transaction id" },
+                sha256: {
+                    type: "string",
+                    description: "Optional expected hex digest to cross-check",
+                },
+                fetch_content: {
+                    type: "boolean",
+                    description: "Fetch inscription content from ordinals.com when inscription_id is set (default true)",
+                },
+                include_trac: {
+                    type: "boolean",
+                    description: "When inscription_id is set, query Trac TAP/DMT index metadata (default true). Soft-fails if Trac is down.",
+                },
+                trac_rest_base: {
+                    type: "string",
+                    description: "Optional self-hosted tap-reader REST origin. Falls back to env DMT_TRAC_REST, then public Socket.IO at tap.trac.network.",
+                },
+            },
+            required: ["memory"],
+        },
+    },
+];
+export async function callTool(name, rawArgs) {
+    const args = rawArgs ?? {};
     try {
         if (name === "prepare_memory") {
             if (typeof args.agent_id !== "string")
@@ -506,6 +634,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 content: args.content,
                 tags: args.tags,
                 created_at: args.created_at,
+                extensions: extensionFields(args),
             });
             return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
         }
@@ -545,16 +674,22 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             isError: true,
         };
     }
-});
+}
+const server = new Server({ name: "dmt-receipts", version: "0.2.0" }, { capabilities: { tools: {} } });
+server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }));
+server.setRequestHandler(CallToolRequestSchema, async (request) => callTool(request.params.name, (request.params.arguments ?? undefined)));
 async function main() {
     const transport = new StdioServerTransport();
     await server.connect(transport);
 }
-const isDirectRun = process.argv[1] &&
-    (process.argv[1].endsWith("/index.js") ||
-        process.argv[1].endsWith("/index.ts") ||
-        process.argv[1].endsWith("dmt-receipts-mcp"));
-if (isDirectRun) {
+export function isCliEntry(entry) {
+    if (!entry)
+        return false;
+    const normalized = entry.replace(/\\/g, "/");
+    const base = normalized.slice(normalized.lastIndexOf("/") + 1);
+    return base === "index.js" || base === "index.ts" || base === "dmt-receipts-mcp";
+}
+if (isCliEntry(process.argv[1])) {
     main().catch((error) => {
         console.error(error instanceof Error ? error.message : error);
         process.exitCode = 1;

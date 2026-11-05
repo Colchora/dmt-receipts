@@ -8,6 +8,13 @@ export type TracLookupResult = {
     accumulator?: unknown;
     error?: string;
 };
+type ContentFetch = {
+    attempted: boolean;
+    ok: boolean;
+    matches_canonical: boolean;
+    remote_sha256?: string;
+    error?: string;
+};
 export declare function fetchTracMetadata(args: {
     inscription_id: string;
     trac_rest_base?: string;
@@ -28,6 +35,7 @@ export declare function prepareMemory(args: {
     content: unknown;
     tags?: string[];
     created_at?: string;
+    extensions?: Record<string, unknown>;
 }): {
     memory: MemoryV1;
     canonical: string;
@@ -57,14 +65,18 @@ export declare function verifyInscription(args: {
     sha256: string;
     byte_length: number;
     matches_expected_sha256: boolean;
-    content_fetch: {
-        attempted: boolean;
-        ok: boolean;
-        matches_canonical: boolean;
-        remote_sha256?: string;
-        error?: string;
-    };
+    content_fetch: ContentFetch;
     explorer_links: string[];
     note: string;
     trac?: TracLookupResult;
 }>;
+export type ToolResult = {
+    content: Array<{
+        type: "text";
+        text: string;
+    }>;
+    isError?: boolean;
+};
+export declare function callTool(name: string, rawArgs: Record<string, unknown> | undefined): Promise<ToolResult>;
+export declare function isCliEntry(entry: string | undefined): boolean;
+export {};
