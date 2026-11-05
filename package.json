@@ -1,0 +1,53 @@
+{
+  "name": "dmt-receipts-mcp-unpublished",
+  "version": "0.1.0",
+  "description": "Local MCP server for creating and checking canonical OpenTimestamps receipts for agent memories.",
+  "type": "module",
+  "bin": {
+    "dmt-receipts-mcp": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "files": [
+    "dist",
+    "examples",
+    "CONTRIBUTING.md",
+    "LICENSE",
+    "README.md",
+    "SECURITY.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "prepare": "npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "opentimestamps",
+    "bitcoin",
+    "timestamping",
+    "proof-of-existence",
+    "agent-memory",
+    "ai-agents",
+    "dmt-receipts"
+  ],
+  "author": "Cultura / DMT Receipts contributors",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/PLACEHOLDER/dmt-receipts.git"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  },
+  "mcpName": "io.github.PLACEHOLDER/dmt-receipts"
+}
