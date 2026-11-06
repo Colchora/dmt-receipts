@@ -17,6 +17,41 @@ const FETCH_TIMEOUT_MS = 15_000;
 const TRAC_WS_URL = "https://tap.trac.network";
 const TRAC_TIMEOUT_MS = 8_000;
 const PREPARE_KNOWN_FIELDS = new Set(["agent_id", "key", "content", "tags", "created_at"]);
+function isRecord(value) {
+    return typeof value === "object" && value !== null;
+}
+function toolArgs(raw) {
+    if (isRecord(raw) && !Array.isArray(raw))
+        return raw;
+    return {};
+}
+function optionalString(args, key, message) {
+    const value = args[key];
+    if (value === undefined)
+        return undefined;
+    if (typeof value !== "string")
+        throw new Error(message);
+    return value;
+}
+function optionalBoolean(args, key, message) {
+    const value = args[key];
+    if (value === undefined)
+        return undefined;
+    if (typeof value !== "boolean")
+        throw new Error(message);
+    return value;
+}
+function isStringArray(value) {
+    return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+function optionalStringArray(args, key, message) {
+    const value = args[key];
+    if (value === undefined)
+        return undefined;
+    if (!isStringArray(value))
+        throw new Error(message);
+    return value;
+}
 function normalizeTracRestBase(raw) {
     const value = (raw || "").trim();
     if (!value)
@@ -31,13 +66,13 @@ function normalizeTracRestBase(raw) {
     return url.href.replace(/\/+$/, "");
 }
 function unwrapTracPayload(msg) {
-    if (msg && typeof msg === "object") {
-        const record = msg;
-        if (record.error) {
-            throw new Error(typeof record.error === "string" ? record.error : JSON.stringify(record.error));
+    if (isRecord(msg)) {
+        const errorValue = msg.error;
+        if (errorValue) {
+            throw new Error(typeof errorValue === "string" ? errorValue : JSON.stringify(errorValue));
         }
-        if (Object.prototype.hasOwnProperty.call(record, "result"))
-            return record.result;
+        if (Object.prototype.hasOwnProperty.call(msg, "result"))
+            return msg.result;
     }
     if (msg === undefined)
         throw new Error("No result returned");
@@ -90,10 +125,14 @@ async function tracSocketGetMany(calls) {
         let remaining = calls.length;
         let settled = false;
         const nonce = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-        const callIds = calls.map((_, index) => `dmt-mcp-${nonce}-${index.toString(36)}`);
+        const pending = calls.map((call, index) => ({
+            func: call.func,
+            args: call.args,
+            callId: `dmt-mcp-${nonce}-${index.toString(36)}`,
+        }));
         const indexById = new Map();
-        for (let i = 0; i < callIds.length; i += 1)
-            indexById.set(callIds[i], i);
+        for (const [index, entry] of pending.entries())
+            indexById.set(entry.callId, index);
         const socket = ioFactory(TRAC_WS_URL, {
             autoConnect: false,
             reconnection: false,
@@ -144,17 +183,18 @@ async function tracSocketGetMany(calls) {
                 finishOne(i, { ok: false, error: message });
         };
         socket.on("response", (msg) => {
-            if (!msg || typeof msg !== "object")
+            if (!isRecord(msg))
                 return;
-            const record = msg;
-            if (typeof record.call_id !== "string")
+            const callId = msg.call_id;
+            if (typeof callId !== "string")
                 return;
-            const index = indexById.get(record.call_id);
+            const index = indexById.get(callId);
             if (index === undefined)
                 return;
             try {
-                if (!Object.prototype.hasOwnProperty.call(record, "result")) {
-                    throw new Error(typeof record.error === "string" ? record.error : "Malformed Trac response");
+                if (!Object.prototype.hasOwnProperty.call(msg, "result")) {
+                    const errorValue = msg.error;
+                    throw new Error(typeof errorValue === "string" ? errorValue : "Malformed Trac response");
                 }
                 finishOne(index, { ok: true, result: unwrapTracPayload(msg) });
             }
@@ -176,11 +216,11 @@ async function tracSocketGetMany(calls) {
         });
         socket.on("connect", () => {
             try {
-                for (let i = 0; i < calls.length; i += 1) {
+                for (const entry of pending) {
                     socket.emit("get", {
-                        func: calls[i].func,
-                        args: calls[i].args,
-                        call_id: callIds[i],
+                        func: entry.func,
+                        args: entry.args,
+                        call_id: entry.callId,
                     });
                 }
             }
@@ -222,12 +262,21 @@ function tracQueries(inscriptionId) {
 function tracResultFromOutcomes(queries, outcomes) {
     const out = { ok: false };
     const errors = [];
-    for (let i = 0; i < queries.length; i += 1) {
+    if (queries.length !== outcomes.length) {
+        errors.push("Trac lookup count mismatch");
+    }
+    const count = queries.length < outcomes.length ? queries.length : outcomes.length;
+    for (let i = 0; i < count; i += 1) {
         const query = queries[i];
         const result = outcomes[i];
+        if (query === undefined || result === undefined) {
+            errors.push(`lookup ${i}: missing result`);
+            continue;
+        }
         if (result.ok) {
             out.ok = true;
-            out.source = out.source || result.source;
+            if (!out.source)
+                out.source = result.source;
             out[query.key] = result.result;
         }
         else if (result.error) {
@@ -273,8 +322,7 @@ export async function fetchTracMetadata(args) {
 }
 function pathOf(segments) {
     let path = "memory";
-    for (let i = 0; i < segments.length; i += 1) {
-        const segment = segments[i];
+    for (const segment of segments) {
         path += typeof segment === "number" ? `[${segment}]` : `.${segment}`;
     }
     return path;
@@ -285,6 +333,8 @@ function compareCodePointsFrom(left, right, start) {
     while (i < left.length && j < right.length) {
         const a = left.codePointAt(i);
         const b = right.codePointAt(j);
+        if (a === undefined || b === undefined)
+            break;
         if (a !== b)
             return a - b;
         i += a > 0xffff ? 2 : 1;
@@ -334,17 +384,22 @@ function writeCanonical(value, segments) {
         return `[${items.join(",")}]`;
     }
     if (valueType === "object") {
+        if (!isRecord(value)) {
+            throw new Error(`${pathOf(segments)} contains a value that cannot be represented in JSON`);
+        }
         const prototype = Object.getPrototypeOf(value);
         if (prototype !== Object.prototype && prototype !== null) {
             throw new Error(`${pathOf(segments)} must contain only JSON-compatible objects`);
         }
-        const record = value;
-        const keys = Object.keys(record).sort(compareCodePoints);
+        const keys = Object.keys(value).sort(compareCodePoints);
         const parts = new Array(keys.length);
         for (let i = 0; i < keys.length; i += 1) {
             const key = keys[i];
+            if (key === undefined) {
+                throw new Error(`${pathOf(segments)} contains a value that cannot be represented in JSON`);
+            }
             segments.push(key);
-            const encodedValue = writeCanonical(record[key], segments);
+            const encodedValue = writeCanonical(value[key], segments);
             segments.pop();
             parts[i] = `${JSON.stringify(key)}:${encodedValue}`;
         }
@@ -379,25 +434,28 @@ function isUtcTimestamp(value) {
     return Number.isFinite(date.getTime()) && date.toISOString().replace(/\.\d{3}Z$/, "Z") === value;
 }
 function assertMemory(value) {
-    if (!value || typeof value !== "object" || Array.isArray(value)) {
+    if (!isRecord(value) || Array.isArray(value)) {
         throw new Error("memory must be a dmt-memory/v1 object");
     }
-    const memory = value;
-    if (typeof memory.agent_id !== "string" || !memory.agent_id) {
+    const agentId = value.agent_id;
+    if (typeof agentId !== "string" || !agentId) {
         throw new Error("memory.agent_id must be a non-empty string");
     }
-    if (typeof memory.key !== "string" || !memory.key) {
+    const key = value.key;
+    if (typeof key !== "string" || !key) {
         throw new Error("memory.key must be a non-empty string");
     }
-    const contentType = typeof memory.content;
-    if (memory.content === null ||
-        !["string", "object", "number", "boolean"].includes(contentType)) {
+    const content = value.content;
+    const contentType = typeof content;
+    if (content === null || !["string", "object", "number", "boolean"].includes(contentType)) {
         throw new Error("memory.content must be a JSON string, object, array, number, or boolean");
     }
-    if (!Array.isArray(memory.tags) || !memory.tags.every((tag) => typeof tag === "string")) {
+    const tags = value.tags;
+    if (!isStringArray(tags)) {
         throw new Error("memory.tags must be an array of strings");
     }
-    if (typeof memory.created_at !== "string" || !isUtcTimestamp(memory.created_at)) {
+    const createdAt = value.created_at;
+    if (typeof createdAt !== "string" || !isUtcTimestamp(createdAt)) {
         throw new Error("memory.created_at must be a valid ISO-8601 UTC timestamp ending in Z");
     }
 }
@@ -494,6 +552,11 @@ async function fetchInscriptionContent(inscriptionId, canonical, hex) {
     }
     return contentFetch;
 }
+function tracLookupArgs(inscriptionId, tracRestBase) {
+    if (tracRestBase === undefined)
+        return { inscription_id: inscriptionId };
+    return { inscription_id: inscriptionId, trac_rest_base: tracRestBase };
+}
 export async function verifyInscription(args) {
     if (args.fetch_content !== undefined && typeof args.fetch_content !== "boolean") {
         throw new Error("fetch_content must be a boolean");
@@ -502,23 +565,22 @@ export async function verifyInscription(args) {
     const canonical = canonicalJson(args.memory);
     const hex = sha256Hex(canonical);
     const hexOk = !args.sha256 || args.sha256.toLowerCase() === hex;
+    const inscriptionId = args.inscription_id ? args.inscription_id : undefined;
+    const txid = args.txid ? args.txid : undefined;
     const links = [];
-    if (args.inscription_id) {
-        links.push(ORD_INSCRIPTION(args.inscription_id));
-        links.push(ORD_CONTENT(args.inscription_id));
+    if (inscriptionId) {
+        links.push(ORD_INSCRIPTION(inscriptionId));
+        links.push(ORD_CONTENT(inscriptionId));
     }
-    if (args.txid)
-        links.push(MEMPOOL_TX(args.txid));
-    const shouldFetch = args.fetch_content !== false && Boolean(args.inscription_id);
-    const includeTrac = args.include_trac !== false && Boolean(args.inscription_id);
-    const contentFetchPromise = shouldFetch && args.inscription_id
-        ? fetchInscriptionContent(args.inscription_id, canonical, hex)
+    if (txid)
+        links.push(MEMPOOL_TX(txid));
+    const shouldFetch = args.fetch_content !== false && inscriptionId !== undefined;
+    const includeTrac = args.include_trac !== false && inscriptionId !== undefined;
+    const contentFetchPromise = shouldFetch && inscriptionId !== undefined
+        ? fetchInscriptionContent(inscriptionId, canonical, hex)
         : Promise.resolve(emptyContentFetch());
-    const tracPromise = includeTrac
-        ? fetchTracMetadata({
-            inscription_id: args.inscription_id,
-            trac_rest_base: args.trac_rest_base,
-        })
+    const tracPromise = includeTrac && inscriptionId !== undefined
+        ? fetchTracMetadata(tracLookupArgs(inscriptionId, args.trac_rest_base))
         : Promise.resolve(undefined);
     const [contentFetch, trac] = await Promise.all([contentFetchPromise, tracPromise]);
     const ok = hexOk &&
@@ -613,56 +675,61 @@ const TOOLS = [
         },
     },
 ];
+function parsePrepareMemoryArgs(args) {
+    const agentId = args.agent_id;
+    if (typeof agentId !== "string")
+        throw new Error("agent_id must be a string");
+    const key = args.key;
+    if (typeof key !== "string")
+        throw new Error("key must be a string");
+    const tags = optionalStringArray(args, "tags", "tags must be an array of strings");
+    const createdAt = optionalString(args, "created_at", "created_at must be a string");
+    const extensions = extensionFields(args);
+    const input = {
+        agent_id: agentId,
+        key,
+        content: args.content,
+    };
+    if (tags !== undefined)
+        input.tags = tags;
+    if (createdAt !== undefined)
+        input.created_at = createdAt;
+    if (extensions !== undefined)
+        input.extensions = extensions;
+    return input;
+}
+function parseVerifyInscriptionArgs(args) {
+    const digest = optionalString(args, "sha256", "sha256 must be a string");
+    const inscriptionId = optionalString(args, "inscription_id", "inscription_id must be a string");
+    const txid = optionalString(args, "txid", "txid must be a string");
+    const includeTrac = optionalBoolean(args, "include_trac", "include_trac must be a boolean");
+    const tracRestBase = optionalString(args, "trac_rest_base", "trac_rest_base must be a string");
+    const fetchContent = optionalBoolean(args, "fetch_content", "fetch_content must be a boolean");
+    assertMemory(args.memory);
+    const input = { memory: args.memory };
+    if (digest !== undefined)
+        input.sha256 = digest;
+    if (inscriptionId !== undefined)
+        input.inscription_id = inscriptionId;
+    if (txid !== undefined)
+        input.txid = txid;
+    if (fetchContent !== undefined)
+        input.fetch_content = fetchContent;
+    if (includeTrac !== undefined)
+        input.include_trac = includeTrac;
+    if (tracRestBase !== undefined)
+        input.trac_rest_base = tracRestBase;
+    return input;
+}
 export async function callTool(name, rawArgs) {
-    const args = rawArgs ?? {};
     try {
+        const args = toolArgs(rawArgs);
         if (name === "prepare_memory") {
-            if (typeof args.agent_id !== "string")
-                throw new Error("agent_id must be a string");
-            if (typeof args.key !== "string")
-                throw new Error("key must be a string");
-            if (args.tags !== undefined &&
-                (!Array.isArray(args.tags) || !args.tags.every((tag) => typeof tag === "string"))) {
-                throw new Error("tags must be an array of strings");
-            }
-            if (args.created_at !== undefined && typeof args.created_at !== "string") {
-                throw new Error("created_at must be a string");
-            }
-            const result = prepareMemory({
-                agent_id: args.agent_id,
-                key: args.key,
-                content: args.content,
-                tags: args.tags,
-                created_at: args.created_at,
-                extensions: extensionFields(args),
-            });
+            const result = prepareMemory(parsePrepareMemoryArgs(args));
             return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
         }
         if (name === "verify_inscription") {
-            if (args.sha256 !== undefined && typeof args.sha256 !== "string") {
-                throw new Error("sha256 must be a string");
-            }
-            if (args.inscription_id !== undefined && typeof args.inscription_id !== "string") {
-                throw new Error("inscription_id must be a string");
-            }
-            if (args.txid !== undefined && typeof args.txid !== "string") {
-                throw new Error("txid must be a string");
-            }
-            if (args.include_trac !== undefined && typeof args.include_trac !== "boolean") {
-                throw new Error("include_trac must be a boolean");
-            }
-            if (args.trac_rest_base !== undefined && typeof args.trac_rest_base !== "string") {
-                throw new Error("trac_rest_base must be a string");
-            }
-            const result = await verifyInscription({
-                memory: args.memory,
-                inscription_id: args.inscription_id,
-                txid: args.txid,
-                sha256: args.sha256,
-                fetch_content: args.fetch_content,
-                include_trac: args.include_trac,
-                trac_rest_base: args.trac_rest_base,
-            });
+            const result = await verifyInscription(parseVerifyInscriptionArgs(args));
             return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
         }
         throw new Error(`Unknown tool: ${name}`);
@@ -677,7 +744,7 @@ export async function callTool(name, rawArgs) {
 }
 const server = new Server({ name: "dmt-receipts", version: "0.2.0" }, { capabilities: { tools: {} } });
 server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }));
-server.setRequestHandler(CallToolRequestSchema, async (request) => callTool(request.params.name, (request.params.arguments ?? undefined)));
+server.setRequestHandler(CallToolRequestSchema, async (request) => callTool(request.params.name, request.params.arguments));
 async function main() {
     const transport = new StdioServerTransport();
     await server.connect(transport);

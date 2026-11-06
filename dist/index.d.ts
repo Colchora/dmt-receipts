@@ -15,6 +15,23 @@ type ContentFetch = {
     remote_sha256?: string;
     error?: string;
 };
+export type PrepareMemoryInput = {
+    agent_id: string;
+    key: string;
+    content: unknown;
+    tags?: string[];
+    created_at?: string;
+    extensions?: Record<string, unknown>;
+};
+export type VerifyInscriptionInput = {
+    memory: MemoryV1;
+    inscription_id?: string;
+    txid?: string;
+    sha256?: string;
+    fetch_content?: boolean;
+    include_trac?: boolean;
+    trac_rest_base?: string;
+};
 export declare function fetchTracMetadata(args: {
     inscription_id: string;
     trac_rest_base?: string;
@@ -29,14 +46,7 @@ export type MemoryV1 = {
 };
 export declare function canonicalBytes(memory: MemoryV1): Buffer;
 export declare function sha256(bytes: Buffer): Buffer;
-export declare function prepareMemory(args: {
-    agent_id: string;
-    key: string;
-    content: unknown;
-    tags?: string[];
-    created_at?: string;
-    extensions?: Record<string, unknown>;
-}): {
+export declare function prepareMemory(args: PrepareMemoryInput): {
     memory: MemoryV1;
     canonical: string;
     sha256: string;
@@ -52,15 +62,7 @@ export declare function prepareMemory(args: {
         note: string;
     };
 };
-export declare function verifyInscription(args: {
-    memory: MemoryV1;
-    inscription_id?: string;
-    txid?: string;
-    sha256?: string;
-    fetch_content?: boolean;
-    include_trac?: boolean;
-    trac_rest_base?: string;
-}): Promise<{
+export declare function verifyInscription(args: VerifyInscriptionInput): Promise<{
     ok: boolean;
     sha256: string;
     byte_length: number;
@@ -77,6 +79,6 @@ export type ToolResult = {
     }>;
     isError?: boolean;
 };
-export declare function callTool(name: string, rawArgs: Record<string, unknown> | undefined): Promise<ToolResult>;
+export declare function callTool(name: string, rawArgs: unknown): Promise<ToolResult>;
 export declare function isCliEntry(entry: string | undefined): boolean;
 export {};
