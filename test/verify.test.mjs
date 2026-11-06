@@ -80,6 +80,29 @@ test("prepare_memory keeps extension fields in the canonical hash", async () => 
   assert.equal(body.canonical, canonicalBytes(body.memory).toString("utf8"));
 });
 
+test("tool arguments are checked before prepare or verify run", async () => {
+  const badAgent = await callTool("prepare_memory", { agent_id: 1, key: "k", content: "c" });
+  assert.equal(badAgent.isError, true);
+  assert.match(badAgent.content[0].text, /agent_id must be a string/);
+
+  const badTags = await callTool("prepare_memory", {
+    agent_id: "a",
+    key: "k",
+    content: "c",
+    tags: ["ok", 1],
+  });
+  assert.equal(badTags.isError, true);
+  assert.match(badTags.content[0].text, /tags must be an array of strings/);
+
+  const badDigest = await callTool("verify_inscription", { memory, sha256: 1 });
+  assert.equal(badDigest.isError, true);
+  assert.match(badDigest.content[0].text, /sha256 must be a string/);
+
+  const missingMemory = await callTool("verify_inscription", {});
+  assert.equal(missingMemory.isError, true);
+  assert.match(missingMemory.content[0].text, /memory must be a dmt-memory\/v1 object/);
+});
+
 test("fetchTracMetadata rejects credentialed rest base", async () => {
   const result = await fetchTracMetadata({
     inscription_id: "0".repeat(64) + "i0",

@@ -97,6 +97,16 @@ Tools:
 
 Walkthrough: [`examples/README.md`](./examples/README.md). Agent index: [`llms.txt`](./llms.txt). Protocol bytes: [live llms.txt](https://misty-flame-3nw3.here.now/llms.txt).
 
+## Checks
+
+```sh
+npm run typecheck
+npm run build
+npm test
+```
+
+`npm run typecheck` runs `tsc --noEmit`. The compiler uses `strict`, `noUncheckedIndexedAccess`, and `exactOptionalPropertyTypes`. `npm test` rebuilds `dist/`, runs the unit tests, and runs `examples/run-demo.mjs`.
+
 ## Prepare, inscribe, verify
 
 1. Call `prepare_memory` with `agent_id`, `key`, and `content`.

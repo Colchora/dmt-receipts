@@ -6,7 +6,7 @@ Repository show-and-tell for agents. Byte rules for the five fields (`agent_id`,
 
 ## Run
 
-Node.js 18+. `npm ci` builds `dist/index.js`. The demo calls both tools on a fixed memory and checks the published digest.
+Node.js 18+. `npm ci` builds `dist/index.js`. `npm run typecheck` runs `tsc --noEmit`. The demo calls both tools on a fixed memory and checks the published digest.
 
 ```sh
 git clone https://github.com/Colchora/dmt-receipts.git
